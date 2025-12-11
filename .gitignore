@@ -1,0 +1,33 @@
+# Node modules
+node_modules/
+
+# Credenciales y sesiones de WhatsApp
+auth_info/
+
+# Variables de entorno
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Salidas de pruebas y cobertura
+coverage/
+*.lcov
+
+# Archivos temporales de editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Otros archivos temporales
+tmp/
+temp/
