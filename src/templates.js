@@ -1,63 +1,106 @@
 import { BASE_URL } from "./config/index.js";
 
-//plantilla para enviar mensaje por popups
+// Lista de plantillas para exponer al front-end
+export const templateList = [
+  {
+    id: "1",
+    name: "LETRAS DE ACRÍLICO",
+    text: `¡Hola {nombre}!👋
+Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
+
+Las *letras de acrílico* son ideales para darle a tu negocio una imagen moderna, elegante y profesional.
+
+✅ Excelente visibilidad
+✅ Acabados personalizados
+✅ Perfectas para interiores y exteriores
+
+💬 Cuéntanos: ¿qué tamaño y estilo tienes en mente para tus letras? 👇`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "2",
+    name: "LETRAS DE ALUMINIO DORADAS 3D",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+
+Las *letras de aluminio doradas 3D* transmiten elegancia, prestigio y alto impacto visual.
+
+✅ Acabado premium
+✅ Alta durabilidad
+✅ Ideal para marcas exclusivas
+
+💬 Cuéntanos: ¿en qué espacio deseas instalarlas y qué tamaño necesitas? 👇`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "3",
+    name: "LETRAS DE ALUMINIO PLATEADA 3D",
+    text: `¡Hola {nombre}!👋
+Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
+
+Las *letras de aluminio plateadas 3D* ofrecen un diseño moderno y profesional para tu negocio.
+
+✅ Estilo elegante
+✅ Alta resistencia
+✅ Excelente presencia visual
+
+💬 Cuéntanos: ¿para interior o exterior y qué dimensiones estás buscando? 👇`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "4",
+    name: "LETREROS LUMINOSOS",
+    text: `¡Hola {nombre}!👋
+Gracias por comunicarte con Neon Led Publicidad ✨💡
+
+Los *letreros luminosos* hacen que tu marca destaque de día y de noche.
+
+✅ Máxima visibilidad
+✅ Tecnología LED de bajo consumo
+✅ Diseños personalizados
+
+💬 Cuéntanos: ¿qué tipo de letrero necesitas y dónde lo piensas instalar? 👇`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "5",
+    name: "Prueba",
+    text: `Hola {nombre}👋
+Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
+
+Este es un mensaje de prueba para validar el envío de plantillas.
+
+💬 Escríbenos para continuar 👇`,
+    image: "imagenes/default.jpg",
+  },
+];
+
+// Función existente
 export function getTemplate(option, params = {}) {
-  const {
-    nombre = '',
-    fecha = '',
-    hora = '',
-    productoName = 'un producto que te encantará'
-  } = params;
+  const { nombre = "", image = "" } = params;
+  const template = templateList.find(t => t.id === option);
 
-  console.log("📝 Plantilla generada:", params);
+  if (!template) {
+    return { 
+      name: "General",
+      text: `✨ ¡Hola ${nombre}! Te saluda Neon Led Publicidad 💡✨
 
-  switch (option) {
-    case 'cita_gratis': //bienvenida
-      return {
-        text: `✨ ¡Hola ${nombre}! Te saluda Digimedia. 💻🚀
+Potencia la visibilidad de tu negocio con soluciones publicitarias modernas y personalizadas.
 
-          Potencia tu presencia online con una página web profesional y personalizada para tu marca.
+📌 Letras corpóreas
+📌 Letreros luminosos
+📌 Diseños a medida
 
-          Te ayudamos con:
-
-            🌐 Diseño web *moderno y a tu medida*.
-            ⚡ Desarrollo optimizado y veloz.
-            📱 100% adaptable a móviles.
-            🎯 SEO listo para posicionarte en Google.
-            💰 Inversión inteligente que multiplica tus ventas.
-
-            👉 Todo en un solo servicio creado para hacer crecer tu negocio sin límites.
-
-              "𝘚𝘪 𝘵𝘶 𝘯𝘦𝘨𝘰𝘤𝘪𝘰 𝘯𝘰 𝘦𝘴𝘵𝘢́ 𝘦𝘯 𝘐𝘯𝘵𝘦𝘳𝘯𝘦𝘵, 𝘵𝘶 𝘯𝘦𝘨𝘰𝘤𝘪𝘰 𝘯𝘰 𝘦𝘹𝘪𝘴𝘵𝘦." -Bill gates
-
-          Tu negocio no puede esperar más para crecer.
-
-          Hazlo digital con *DigiMedia.*`,
-                  image: 'imagenes/Flyer.jpg'  // Ruta relativa local
-      };
-    
-    case 'producto': // Nuevo caso para cualquier producto
-      return {
-        text: `🌟 ¡Hola ${nombre}! Te saluda Neon Led Publicidad. 💻🚀
-
-          Gracias por tu interés en **${productoName}**.
-
-          Para darte la mejor cotización y asesoría personalizada sobre este producto, por favor confírmanos:
-          
-          ✅ *Tipo de acabado* (ej. brillante, mate).
-          ✅ *Tamaño y cantidad* que necesitas.
-          ✅ *Uso principal* (interior/exterior, fijo/móvil).
-
-          Estamos listos para ayudarte a destacar tu marca con **${productoName}**. ¡Cuéntanos más para comenzar!`,
-          image: 'imagenes/Flyer.jpg' // Ruta relativa local
-      };
-
-      default:
-        return {
-          text: `Holas ${nombre}, este es un mensaje automático.`,
-          image: 'imagenes/default.jpg'  // Ruta relativa local
-        };
+¡Estamos listos para ayudarte a destacar! 🚀`,
+      image: "imagenes/Flyer.jpg",
+    };
   }
+
+  return {
+    name: template.name,
+    text: template.text.replace("{nombre}", nombre),
+    image: image || template.image,
+  };
 }
 
 //plantilla para enviar mensaje de acuerdo al mensaje
