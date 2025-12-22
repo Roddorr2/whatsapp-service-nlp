@@ -64,6 +64,104 @@ Los *letreros luminosos* hacen que tu marca destaque de día y de noche.
   },
   {
     id: "5",
+    name: "NEÓN LED",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+NEÓN LED
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "6",
+    name: "LETRAS DE NEÓN EN TUBOS DE VIDRIO",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+LETRAS DE NEÓN EN TUBOS DE VIDRIO
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "7",
+    name: "IMPRESIÓN EN VINILO",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+IMPRESIÓN EN VINILO
+
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "8",
+    name: "MENÚ BOARD",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+MENÚ BOARD
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "9",
+    name: "LETRAS PINTADAS DE MDF",
+    text: `¡Hola {nombre}!👋
+    Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+LETRAS PINTADAS DE MDF`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "10",
+    name: "MONITORES DE PUBLICIDAD",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+MONITORES DE PUBLICIDAD
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "11",
+    name: "PANTALLAS LED",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+PANTALLAS LED
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "12",
+    name: "HOLOGRÁFICO",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+HOLOGRÁFICO
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "13",
+    name: "PIXEL LED",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+    PIXEL LED`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "14",
+    name: "SILLAS LUMINOSAS",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+
+SILLAS LUMINOSAS`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "15",
+    name: "TECHOS LED",
+    text: `¡Hola {nombre}!👋
+Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+    TECHOS LED
+`,
+    image: "imagenes/Flyer.jpg",
+  },
+  {
+    id: "16",
     name: "Prueba",
     text: `Hola {nombre}👋
 Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
