@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 
 export async function sendMessage(req, res) {
   try {
-    const { nombre, templateOption, telefono } = req.body;
+    const { nombre, templateOption, telefono, productoName } = req.body;
 
     if (!telefono || !templateOption) {
       return res.status(400).json({
@@ -26,6 +26,7 @@ export async function sendMessage(req, res) {
       nombre,
       templateOption,
       telefono,
+      productoName
     });
 
     res.json({

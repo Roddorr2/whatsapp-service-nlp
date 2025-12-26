@@ -3,203 +3,87 @@ import { BASE_URL } from "./config/index.js";
 // Lista de plantillas para exponer al front-end
 export const templateList = [
   {
-    id: "1",
+    id: "LETRAS DE ACRÍLICO",
     name: "LETRAS DE ACRÍLICO",
-    text: `¡Hola {nombre}!👋
+    messages: {
+      1: {
+        text: `¡Hola {nombre}! 👋
 Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
 
-Las *letras de acrílico* son ideales para darle a tu negocio una imagen moderna, elegante y profesional.
+Las *letras de acrílico* son ideales para darle a tu negocio una imagen moderna y profesional.
 
-✅ Excelente visibilidad
-✅ Acabados personalizados
-✅ Perfectas para interiores y exteriores
+💬 ¿Qué tamaño y estilo tienes en mente? 👇`,
+        image: "imagenes/Flyer.jpg",
+      },
+      2: {
+        text: `Hola {nombre} 👋
+Solo queríamos saber si tienes alguna duda sobre nuestras *letras de acrílico* 😊
 
-💬 Cuéntanos: ¿qué tamaño y estilo tienes en mente para tus letras? 👇`,
-    image: "imagenes/Flyer.jpg",
+Estamos atentos para ayudarte.`,
+      },
+      3: {
+        text: `Hola {nombre} 👋
+Este es un último recordatorio sobre tu consulta por *letras de acrílico* ✨
+
+Cuando gustes, escríbenos 😊`,
+      }
+    }
   },
+
   {
-    id: "2",
+    id: "LETRAS DE ALUMINIO DORADAS 3D",
     name: "LETRAS DE ALUMINIO DORADAS 3D",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
+    messages: {
+      1: {
+        text: `¡Hola {nombre}! 👋
+Gracias por escribirnos. Las *letras de aluminio doradas 3D* transmiten elegancia y alto impacto visual ✨
 
-Las *letras de aluminio doradas 3D* transmiten elegancia, prestigio y alto impacto visual.
+💬 ¿Dónde deseas instalarlas?`,
+        image: "imagenes/Flyer.jpg",
+      },
+      2: {
+        text: `Hola {nombre} 👋
+¿Pudiste revisar la información sobre las *letras de aluminio doradas 3D*? 😊
 
-✅ Acabado premium
-✅ Alta durabilidad
-✅ Ideal para marcas exclusivas
+Quedamos atentos.`,
+      },
+      3: {
+        text: `Hola {nombre} 👋
+Este es un último mensaje para ayudarte con las *letras de aluminio doradas 3D* ✨
 
-💬 Cuéntanos: ¿en qué espacio deseas instalarlas y qué tamaño necesitas? 👇`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "3",
-    name: "LETRAS DE ALUMINIO PLATEADA 3D",
-    text: `¡Hola {nombre}!👋
-Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
-
-Las *letras de aluminio plateadas 3D* ofrecen un diseño moderno y profesional para tu negocio.
-
-✅ Estilo elegante
-✅ Alta resistencia
-✅ Excelente presencia visual
-
-💬 Cuéntanos: ¿para interior o exterior y qué dimensiones estás buscando? 👇`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "4",
-    name: "LETREROS LUMINOSOS",
-    text: `¡Hola {nombre}!👋
-Gracias por comunicarte con Neon Led Publicidad ✨💡
-
-Los *letreros luminosos* hacen que tu marca destaque de día y de noche.
-
-✅ Máxima visibilidad
-✅ Tecnología LED de bajo consumo
-✅ Diseños personalizados
-
-💬 Cuéntanos: ¿qué tipo de letrero necesitas y dónde lo piensas instalar? 👇`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "5",
-    name: "NEÓN LED",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-NEÓN LED
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "6",
-    name: "LETRAS DE NEÓN EN TUBOS DE VIDRIO",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-LETRAS DE NEÓN EN TUBOS DE VIDRIO
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "7",
-    name: "IMPRESIÓN EN VINILO",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-IMPRESIÓN EN VINILO
-
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "8",
-    name: "MENÚ BOARD",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-MENÚ BOARD
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "9",
-    name: "LETRAS PINTADAS DE MDF",
-    text: `¡Hola {nombre}!👋
-    Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-LETRAS PINTADAS DE MDF`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "10",
-    name: "MONITORES DE PUBLICIDAD",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-MONITORES DE PUBLICIDAD
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "11",
-    name: "PANTALLAS LED",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-PANTALLAS LED
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "12",
-    name: "HOLOGRÁFICO",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-HOLOGRÁFICO
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "13",
-    name: "PIXEL LED",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-    PIXEL LED`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "14",
-    name: "SILLAS LUMINOSAS",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-
-SILLAS LUMINOSAS`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "15",
-    name: "TECHOS LED",
-    text: `¡Hola {nombre}!👋
-Gracias por escribirnos. Somos Neon Led Publicidad ✨💡
-    TECHOS LED
-`,
-    image: "imagenes/Flyer.jpg",
-  },
-  {
-    id: "16",
-    name: "Prueba",
-    text: `Hola {nombre}👋
-Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
-
-Este es un mensaje de prueba para validar el envío de plantillas.
-
-💬 Escríbenos para continuar 👇`,
-    image: "imagenes/default.jpg",
-  },
+Cuando gustes, estamos aquí.`,
+      }
+    }
+  }
 ];
 
-// Función existente
-export function getTemplate(option, params = {}) {
-  const { nombre = "", image = "" } = params;
-  const template = templateList.find(t => t.id === option);
 
-  if (!template) {
-    return { 
-      name: "General",
-      text: `✨ ¡Hola ${nombre}! Te saluda Neon Led Publicidad 💡✨
+export function getTemplate(productoName, messageNumber, params = {}) {
+  const { nombre = "" } = params;
 
-Potencia la visibilidad de tu negocio con soluciones publicitarias modernas y personalizadas.
+  const product = templateList.find(p => p.id === productoName);
 
-📌 Letras corpóreas
-📌 Letreros luminosos
-📌 Diseños a medida
+  if (!product) {
+    return {
+      text: `Hola ${nombre} 👋 Gracias por escribirnos a Neon Led Publicidad ✨`,
+    };
+  }
 
-¡Estamos listos para ayudarte a destacar! 🚀`,
-      image: "imagenes/Flyer.jpg",
+  const message = product.messages[messageNumber];
+
+  if (!message) {
+    return {
+      text: `Hola ${nombre} 👋 Gracias por tu interés en ${product.name} ✨`,
     };
   }
 
   return {
-    name: template.name,
-    text: template.text.replace("{nombre}", nombre),
-    image: image || template.image,
+    name: nombre,
+    text: message.text.replace("{nombre}", nombre),
+    image: message.image || null,
   };
 }
+
 
 //plantilla para enviar mensaje de acuerdo al mensaje
 export function getTemplateMessage(option, params = {}) {

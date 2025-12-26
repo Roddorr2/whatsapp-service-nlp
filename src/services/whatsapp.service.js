@@ -759,7 +759,7 @@ export default {
     const formattedPhone = `${cleanPhone}@s.whatsapp.net`;
 
     // 🔹 Obtiene la plantilla (objeto con text + image)
-    const plantilla = getTemplate(templateOption, { nombre, fecha, hora, productoName });
+    const plantilla = getTemplate(productoName, templateOption, { nombre, fecha, hora });
 
     if (!plantilla || !plantilla.text) {
       throw new Error("Plantilla de mensaje no válida");
