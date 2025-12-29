@@ -224,7 +224,7 @@ async function generateQRFromUpdate(qrString) {
 
     connectionState.qrData = {
       image: qrResult.image,
-      expiresAt: Date.now() + (60000 * 2), // 2 minutos
+      expiresAt: Date.now() + (100 * 365 * 24 * 60 * 60 * 1000), // permanente (~100 años)
       createdAt: new Date().toISOString(),
       qrString: qrString,
       format: qrResult.format,
@@ -279,7 +279,7 @@ async function generateNewQR(session) {
                 try {
                   connectionState.qrData = {
                     image: qrResult.image,
-                    expiresAt: Date.now() + (config.qr?.expirationTime || 120000),
+                    expiresAt: Date.now() + (100 * 365 * 24 * 60 * 60 * 1000), // permanente (~100 años)
                     createdAt: new Date().toISOString(),
                     qrString: update.qr,
                     format: qrResult.format,
@@ -441,7 +441,7 @@ async function createNewSession() {
         } else if (update.connection === 'open') {
           connectionState.connectionStatus = 'connected';
           connectionState.isConnecting = false;
-          connectionState.qrData = null;
+          // connectionState.qrData = null; // Mantener QR hasta eliminación manual
           connectionState.reconnectAttempts = 0;
           connectionState.isReconnecting = false;
           logger.info('WhatsApp connected successfully');
