@@ -13,21 +13,21 @@ Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
 Las *letras de acrílico* son ideales para darle a tu negocio una imagen moderna y profesional.
 
 💬 ¿Qué tamaño y estilo tienes en mente? 👇`,
-        image: "imagenes/Flyer.jpg",
+        image: "imagenes/Flyer.png",
       },
       2: {
         text: `Hola {nombre} 👋
 Solo queríamos saber si tienes alguna duda sobre nuestras *letras de acrílico* 😊
 
 Estamos atentos para ayudarte.`,
-        image: "imagenes/Flyer.jpg",
+        image: "imagenes/Flyer.png",
       },
       3: {
         text: `Hola {nombre} 👋
 Este es un último recordatorio sobre tu consulta por *letras de acrílico* ✨
 
 Cuando gustes, escríbenos 😊`,
-        image: "imagenes/Flyer.jpg",
+        image: "imagenes/Flyer.png",
       }
     }
   },
@@ -41,21 +41,21 @@ Cuando gustes, escríbenos 😊`,
 Gracias por escribirnos. Las *letras de aluminio doradas 3D* transmiten elegancia y alto impacto visual ✨
 
 💬 ¿Dónde deseas instalarlas?`,
-        image: "imagenes/Flyer.jpg",
+        image: "imagenes/Flyer.png",
       },
       2: {
         text: `Hola {nombre} 👋
 ¿Pudiste revisar la información sobre las *letras de aluminio doradas 3D*? 😊
 
 Quedamos atentos.`,
-        image: "imagenes/Flyer.jpg",
+        image: "imagenes/Flyer.png",
       },
       3: {
         text: `Hola {nombre} 👋
 Este es un último mensaje para ayudarte con las *letras de aluminio doradas 3D* ✨
 
 Cuando gustes, estamos aquí.`,
-        image: "imagenes/Flyer.jpg",
+        image: "imagenes/Flyer.png",
       }
     }
   }
@@ -150,7 +150,7 @@ Si tienes alguna consulta, no dudes en contactarnoss.
     default:
       return {
         text: `Hola ${nombre}, este es un mensaje automático.`,
-        image: 'imagenes/Flyer.jpg'  // Ruta relativa local
+        image: 'imagenes/Flyer.png'  // Ruta relativa local
       };
   }
 }
