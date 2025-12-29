@@ -112,7 +112,7 @@ Creamos soluciones visuales personalizadas para que tu marca destaque y se vea p
   return {
     name: nombre,
     text: message.text.replace("{nombre}", nombre),
-    image: message.image || null,
+    image: message.image || "imagenes/Flyer.png",
   };
 }
 
