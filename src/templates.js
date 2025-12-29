@@ -20,12 +20,14 @@ Las *letras de acrílico* son ideales para darle a tu negocio una imagen moderna
 Solo queríamos saber si tienes alguna duda sobre nuestras *letras de acrílico* 😊
 
 Estamos atentos para ayudarte.`,
+        image: "imagenes/Flyer.jpg",
       },
       3: {
         text: `Hola {nombre} 👋
 Este es un último recordatorio sobre tu consulta por *letras de acrílico* ✨
 
 Cuando gustes, escríbenos 😊`,
+        image: "imagenes/Flyer.jpg",
       }
     }
   },
@@ -46,12 +48,14 @@ Gracias por escribirnos. Las *letras de aluminio doradas 3D* transmiten eleganci
 ¿Pudiste revisar la información sobre las *letras de aluminio doradas 3D*? 😊
 
 Quedamos atentos.`,
+        image: "imagenes/Flyer.jpg",
       },
       3: {
         text: `Hola {nombre} 👋
 Este es un último mensaje para ayudarte con las *letras de aluminio doradas 3D* ✨
 
 Cuando gustes, estamos aquí.`,
+        image: "imagenes/Flyer.jpg",
       }
     }
   }
@@ -65,7 +69,21 @@ export function getTemplate(productoName, messageNumber, params = {}) {
 
   if (!product) {
     return {
-      text: `Hola ${nombre} 👋 Gracias por escribirnos a Neon Led Publicidad ✨`,
+      name: "Mensahe General",
+      text: `✨ Haz que tu marca brille con impacto visual
+
+¡Hola! Te saluda Neon LED Publicidad
+
+Creamos soluciones visuales personalizadas para que tu marca destaque y se vea profesional.
+
+🔗 Aquí puedes ver todos nuestros productos: 
+👉 https://ledneonpublicidad.com/productos/
+
+📍 Jr. Paruro 1401 S130 - Lima 
+📍 Urb. Alameda La Rivera Mz F Lt 30 - Ate
+
+📷 Cuéntanos qué tienes en mente y te enviamos una propuesta personalizada.`,
+        image: "imagenes/Flyer.png",
     };
   }
 
@@ -73,7 +91,21 @@ export function getTemplate(productoName, messageNumber, params = {}) {
 
   if (!message) {
     return {
-      text: `Hola ${nombre} 👋 Gracias por tu interés en ${product.name} ✨`,
+      name: "Mensahe General",
+      text: `✨ Haz que tu marca brille con impacto visual
+
+¡Hola! Te saluda Neon LED Publicidad
+
+Creamos soluciones visuales personalizadas para que tu marca destaque y se vea profesional.
+
+🔗 Aquí puedes ver todos nuestros productos: 
+👉 https://ledneonpublicidad.com/productos/
+
+📍 Jr. Paruro 1401 S130 - Lima 
+📍 Urb. Alameda La Rivera Mz F Lt 30 - Ate
+
+📷 Cuéntanos qué tienes en mente y te enviamos una propuesta personalizada.`,
+        image: "imagenes/Flyer.png",
     };
   }
 
