@@ -1,64 +1,89 @@
 import { BASE_URL } from "./config/index.js";
 
-//plantilla para enviar mensaje por popups
-export function getTemplate(option, params = {}) {
-  const {
-    nombre = '',
-    fecha = '',
-    hora = '',
-    productoName = 'un producto que te encantará'
-  } = params;
+// Lista de plantillas para exponer al front-end
+export const templateList = [
+  {
+    id: "LETRAS DE ACRÍLICO",
+    name: "LETRAS DE ACRÍLICO",
+    messages: {
+      1: {
+        text: `¡Hola {nombre}! 👋
+Gracias por contactarnos. Somos Neon Led Publicidad ✨💡
 
-  console.log("📝 Plantilla generada:", params);
+Las *letras de acrílico* son ideales para darle a tu negocio una imagen moderna y profesional.
 
-  switch (option) {
-    case 'cita_gratis': //bienvenida
-      return {
-        text: `✨ ¡Hola ${nombre}! Te saluda Digimedia. 💻🚀
+💬 ¿Qué tamaño y estilo tienes en mente? 👇`,
+        image: "imagenes/Flyer.jpg",
+      },
+      2: {
+        text: `Hola {nombre} 👋
+Solo queríamos saber si tienes alguna duda sobre nuestras *letras de acrílico* 😊
 
-          Potencia tu presencia online con una página web profesional y personalizada para tu marca.
+Estamos atentos para ayudarte.`,
+      },
+      3: {
+        text: `Hola {nombre} 👋
+Este es un último recordatorio sobre tu consulta por *letras de acrílico* ✨
 
-          Te ayudamos con:
+Cuando gustes, escríbenos 😊`,
+      }
+    }
+  },
 
-            🌐 Diseño web *moderno y a tu medida*.
-            ⚡ Desarrollo optimizado y veloz.
-            📱 100% adaptable a móviles.
-            🎯 SEO listo para posicionarte en Google.
-            💰 Inversión inteligente que multiplica tus ventas.
+  {
+    id: "LETRAS DE ALUMINIO DORADAS 3D",
+    name: "LETRAS DE ALUMINIO DORADAS 3D",
+    messages: {
+      1: {
+        text: `¡Hola {nombre}! 👋
+Gracias por escribirnos. Las *letras de aluminio doradas 3D* transmiten elegancia y alto impacto visual ✨
 
-            👉 Todo en un solo servicio creado para hacer crecer tu negocio sin límites.
+💬 ¿Dónde deseas instalarlas?`,
+        image: "imagenes/Flyer.jpg",
+      },
+      2: {
+        text: `Hola {nombre} 👋
+¿Pudiste revisar la información sobre las *letras de aluminio doradas 3D*? 😊
 
-              "𝘚𝘪 𝘵𝘶 𝘯𝘦𝘨𝘰𝘤𝘪𝘰 𝘯𝘰 𝘦𝘴𝘵𝘢́ 𝘦𝘯 𝘐𝘯𝘵𝘦𝘳𝘯𝘦𝘵, 𝘵𝘶 𝘯𝘦𝘨𝘰𝘤𝘪𝘰 𝘯𝘰 𝘦𝘹𝘪𝘴𝘵𝘦." -Bill gates
+Quedamos atentos.`,
+      },
+      3: {
+        text: `Hola {nombre} 👋
+Este es un último mensaje para ayudarte con las *letras de aluminio doradas 3D* ✨
 
-          Tu negocio no puede esperar más para crecer.
-
-          Hazlo digital con *DigiMedia.*`,
-                  image: 'imagenes/Flyer.jpg'  // Ruta relativa local
-      };
-    
-    case 'producto': // Nuevo caso para cualquier producto
-      return {
-        text: `🌟 ¡Hola ${nombre}! Te saluda Neon Led Publicidad. 💻🚀
-
-          Gracias por tu interés en **${productoName}**.
-
-          Para darte la mejor cotización y asesoría personalizada sobre este producto, por favor confírmanos:
-          
-          ✅ *Tipo de acabado* (ej. brillante, mate).
-          ✅ *Tamaño y cantidad* que necesitas.
-          ✅ *Uso principal* (interior/exterior, fijo/móvil).
-
-          Estamos listos para ayudarte a destacar tu marca con **${productoName}**. ¡Cuéntanos más para comenzar!`,
-          image: 'imagenes/Flyer.jpg' // Ruta relativa local
-      };
-
-      default:
-        return {
-          text: `Holas ${nombre}, este es un mensaje automático.`,
-          image: 'imagenes/default.jpg'  // Ruta relativa local
-        };
+Cuando gustes, estamos aquí.`,
+      }
+    }
   }
+];
+
+
+export function getTemplate(productoName, messageNumber, params = {}) {
+  const { nombre = "" } = params;
+
+  const product = templateList.find(p => p.id === productoName);
+
+  if (!product) {
+    return {
+      text: `Hola ${nombre} 👋 Gracias por escribirnos a Neon Led Publicidad ✨`,
+    };
+  }
+
+  const message = product.messages[messageNumber];
+
+  if (!message) {
+    return {
+      text: `Hola ${nombre} 👋 Gracias por tu interés en ${product.name} ✨`,
+    };
+  }
+
+  return {
+    name: nombre,
+    text: message.text.replace("{nombre}", nombre),
+    image: message.image || null,
+  };
 }
+
 
 //plantilla para enviar mensaje de acuerdo al mensaje
 export function getTemplateMessage(option, params = {}) {

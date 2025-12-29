@@ -11,15 +11,22 @@ const __dirname = path.dirname(__filename);
 
 export async function sendMessage(req, res) {
   try {
-const { nombre, templateOption, telefono, fecha, hora, productoName} = req.body;
+    const { nombre, templateOption, telefono, productoName } = req.body;
 
-      const result = await whatsappService.sendMessage({
+    if (!telefono || !templateOption) {
+      return res.status(400).json({
+        success: false,
+        message: "telefono y templateOption son obligatorios",
+      });
+    }
+
+    console.log("📩 Enviando mensaje:", { nombre, templateOption, telefono });
+
+    const result = await whatsappService.sendMessage({
       nombre,
       templateOption,
       telefono,
-      fecha,
-      hora,
-      productoName,
+      productoName
     });
 
     res.json({
@@ -27,11 +34,10 @@ const { nombre, templateOption, telefono, fecha, hora, productoName} = req.body;
       ...result,
     });
   } catch (error) {
-    console.error("Error en sendMessage:", error);
+    console.error("❌ Error en sendMessage:", error);
     res.status(500).json({
       success: false,
       message: error.message,
-      abcd:error,
       timestamp: new Date().toISOString(),
     });
   }
