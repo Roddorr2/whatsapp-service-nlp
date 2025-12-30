@@ -759,7 +759,7 @@ export default {
     const formattedPhone = `${cleanPhone}@s.whatsapp.net`;
 
     // 🔹 Obtiene la plantilla (objeto con text + image)
-    const plantilla = getTemplate(productoName, templateOption, { nombre, fecha, hora });
+    const plantilla = getTemplate(productoName, templateOption, { nombre});
 
     if (!plantilla || !plantilla.text) {
       throw new Error("Plantilla de mensaje no válida");
@@ -858,93 +858,97 @@ export default {
   },
 
 
-  async sendMessageImageDashboard({ telefono, templateOption, nombre, fecha, hora, image }) {
-    if (!connectionState.socket?.user) {
-      throw new Error("No conectado a WhatsApp. Por favor, escanea el código QR primero.");
-    }
+  async sendMessageImageDashboard({
+  telefono,
+  templateOption, 
+  nombre,
+  image,
+  text 
+}) {
+  if (!connectionState.socket?.user) {
+    throw new Error("No conectado a WhatsApp. Escanea el QR primero.");
+  }
 
-    console.log('imagedash', image); // Mantén para debugging
+  if (!text) {
+    throw new Error("El texto del mensaje es obligatorio");
+  }
 
-    const cleanPhone = telefono.replace(/\D/g, "");
-    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
-      throw new Error("El número de teléfono debe tener entre 10 y 15 dígitos");
-    }
+  if (!image) {
+    throw new Error("La imagen es obligatoria");
+  }
 
-    const formattedPhone = `${cleanPhone}@s.whatsapp.net`;
+  /* =========================
+     1️⃣ VALIDAR TELÉFONO
+  ========================= */
+  const cleanPhone = telefono.replace(/\D/g, "");
+  if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+    throw new Error("El número debe tener entre 10 y 15 dígitos");
+  }
 
-    // Obtiene la plantilla
-    const plantilla = getTemplateMessage(templateOption, { nombre, fecha, hora, image });
+  const formattedPhone = `${cleanPhone}@s.whatsapp.net`;
 
-    if (!plantilla || !plantilla.text || !plantilla.image) {
-      throw new Error("Plantilla de mensaje no válida o falta imagen");
-    }
+  /* =========================
+    2️⃣ OBTENER IMAGEN REAL
+========================= */
+const imageBuffer = await getImageBase64(image);
 
-    // Descargar imagen como base64
-    const imageBase64 = await getImageBase64(plantilla.image);
-    if (!imageBase64) {
-      logger.warn('No se pudo descargar la imagen, no se enviará ningún mensaje', { telefono: formattedPhone });
-      return { success: false, message: "No se envió mensaje por error de imagen" };
-    }
+if (!imageBuffer) {
+  
+  console.error("Ruta de imagen no encontrada:", image);
+  throw new Error("No se pudo cargar la imagen seleccionada. Verifique que el archivo exista en el servidor.");
+}
+  /* =========================
+     3️⃣ PAYLOAD EXACTO
+  ========================= */
+  const messagePayload = {
+    image: imageBuffer,
+    caption: text
+  };
 
-    try {
-      logger.info("Enviando mensaje WhatsApp con imagen", {
-        telefono: formattedPhone,
-        template: templateOption,
-        nombre,
-        fecha,
-        hora,
-        imageUrl: plantilla.image
-      });
+  try {
+    logger.info("📤 Enviando mensaje dashboard", {
+      telefono: formattedPhone,
+      templateOption,
+      captionPreview: text.substring(0, 80),
+      imageUsed: image
+    });
 
-      const messagePayload = {
-        image: imageBase64,
-        caption: plantilla.text
-      };
+    const result = await connectionState.socket.sendMessage(
+      formattedPhone,
+      messagePayload
+    );
 
-      const result = await this.sendMessageImageWithRetry(formattedPhone, messagePayload, 3);
+    /* =========================
+       4️⃣ HISTORIAL
+    ========================= */
+    connectionState.sentMessages.push({
+      telefono: formattedPhone,
+      template: templateOption,
+      nombre,
+      messageId: result.key.id,
+      sentAt: new Date().toISOString(),
+      messagePreview: text.substring(0, 100),
+      hasImage: true,
+      status: "sent"
+    });
 
-      logger.info("Mensaje enviado exitosamente", {
-        telefono: formattedPhone,
-        messageId: result.key.id,
-        timestamp: new Date().toISOString(),
-      });
+    return {
+      success: true,
+      messageId: result.key.id,
+      telefono: formattedPhone,
+      messagePreview: text.substring(0, 100)
+    };
 
-      const sentMessage = {
-        telefono: formattedPhone,
-        template: templateOption,
-        nombre,
-        fecha,
-        hora,
-        messageId: result.key.id,
-        sentAt: new Date().toISOString(),
-        messagePreview: plantilla.text.substring(0, 100) + (plantilla.text.length > 100 ? "..." : ""),
-        status: "sent",
-        type: "image",
-        imageSize: imageBase64.length
-      };
+  } catch (error) {
+    logger.error("❌ Error enviando mensaje dashboard", {
+      telefono: formattedPhone,
+      error: error.message
+    });
 
-      connectionState.sentMessages.push(sentMessage);
-
-      const config = getWhatsAppConfig();
-      if (connectionState.sentMessages.length > (config.messages?.maxHistorySize || 100)) {
-        connectionState.sentMessages = connectionState.sentMessages.slice(
-          -(config.messages?.maxHistorySize || 100)
-        );
-      }
-
-      return {
-        success: true,
-        messageId: result.key.id,
-        telefono: formattedPhone,
-        template: templateOption,
-        sentAt: new Date().toISOString(),
-        messagePreview: sentMessage.messagePreview
-      };
-    } catch (error) {
-      logger.error('Fallo al enviar mensaje con imagen, no se enviará nada', { telefono: formattedPhone, error: error.message });
-      return { success: false, message: "Error al enviar imagen, no se envió mensaje" };
-    }
-  },
+    throw new Error("Error al enviar el mensaje con imagen");
+  }
+}
+,
   async sendMessageWithImage({ imageData, phone, caption }) {
     if (!connectionState.socket?.user) {
       throw new Error('No conectado a WhatsApp. Por favor, escanea el código QR primero.');

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { BASE_URL } from "../config/index.js";
+import { getTemplate } from "../templates.js";
 
 
 
@@ -20,17 +21,33 @@ export async function sendMessage(req, res) {
       });
     }
 
-    console.log("📩 Enviando mensaje:", { nombre, templateOption, telefono });
+    console.log("📩 Enviando mensaje:", { nombre, templateOption, telefono, productoName });
 
+    // Construir mensaje según la plantilla seleccionada
+    let mensajeFinal;
+    switch (templateOption) {
+      case 'plantilla_1':
+        mensajeFinal = `Hola ${nombre}, tu producto ${productoName} está listo para entrega.`;
+        break;
+      case 'plantilla_2':
+        mensajeFinal = `Estimado ${nombre}, hemos recibido tu pedido de ${productoName}. Gracias por confiar en nosotros.`;
+        break;
+      case 'plantilla_3':
+        mensajeFinal = `¡Hola ${nombre}! Tu pedido de ${productoName} se encuentra en preparación.`;
+        break;
+      default:
+        mensajeFinal = 'Mensaje por defecto';
+    }
+
+    // Enviar mensaje al servicio de WhatsApp
     const result = await whatsappService.sendMessage({
-      nombre,
-      templateOption,
       telefono,
-      productoName
+      message: mensajeFinal
     });
 
     res.json({
       success: true,
+      messageSent: mensajeFinal,
       ...result,
     });
   } catch (error) {
@@ -42,40 +59,38 @@ export async function sendMessage(req, res) {
     });
   }
 }
+
+
 export async function sendMessageWithImageDashboard(req, res) {
   try {
-    const { nombre, templateOption, telefono, fecha, hora } = req.body;
+    const { nombre, templateOption, messageType, telefono } = req.body;
+    const plantilla = getTemplate(templateOption, messageType, { nombre });
 
-    const image = req.file
-      ? `${BASE_URL}/public/imagenes_dashboard/${req.file.filename}`
-      : null;
-    
-      console.log('image',image)
-    
-      const result = await whatsappService.sendMessageImageDashboard({
-      nombre,
-      templateOption,
+    let imageToSend;
+
+    if (req.file) {
+      
+      imageToSend = `${BASE_URL}/public/imagenes_dashboard/${req.file.filename}`;
+    } else if (plantilla.image) {
+      
+      imageToSend = `${BASE_URL}/public/${plantilla.image}`; 
+    }
+
+    console.log("Ruta final enviada al service:", imageToSend);
+
+    const result = await whatsappService.sendMessageImageDashboard({
       telefono,
-      fecha,
-      hora,
-      image,
+      nombre,
+      image: imageToSend, 
+      text: plantilla.text,
+      templateOption
     });
 
-    res.json({
-      success: true,
-      ...result,
-    });
+    res.json({ success: true, ...result });
   } catch (error) {
-    console.error("Error en sendMessageWithImage:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-      timestamp: new Date().toISOString(),
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 }
-
-
 
 export function getStatus(req, res) {
   try {
