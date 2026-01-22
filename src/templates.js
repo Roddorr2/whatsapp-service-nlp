@@ -3,7 +3,7 @@ import { BASE_URL } from "./config/index.js";
 // Lista de plantillas para exponer al front-end
 export const templateList = [
   {
-    id: "LETRAS DE ACRÍLICO",
+    id: 1,
     name: "LETRAS DE ACRÍLICO",
     messages: {
       1: {
@@ -31,7 +31,7 @@ Cuando gustes, escríbenos 😊`,
   },
 
   {
-    id: "LETRAS DE ALUMINIO DORADAS 3D",
+    id: 2,
     name: "LETRAS DE ALUMINIO DORADAS 3D",
     messages: {
       1: {
@@ -61,7 +61,7 @@ Cuando gustes, estamos aquí.`,
 export function getTemplate(productoName, messageNumber, params = {}) {
   const { nombre = "" } = params;
 
-  const product = templateList.find(p => p.id === productoName);
+  const product = templateList.find(p => p.id == productoName);
 
   if (!product) {
     return {

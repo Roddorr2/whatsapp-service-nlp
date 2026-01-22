@@ -24,7 +24,7 @@ import {
 import { authenticateJWT, authorizeRole } from '../middlewares/auth.middleware.js';
 import { upload } from '../config/message.config.js';
 import { Router } from 'express';
-
+import { templateList } from '../templates.js'
 const router = Router();
 
 // router.post('/send-message', authenticateJWT, authorizeRole('admin'), validateSendMessage, sendMessage);
@@ -45,4 +45,7 @@ router.post('/qr-expire', authenticateJWT, authorizeRole('admin'), forceExpireQr
 router.post('/auth/reset', authenticateJWT, authorizeRole('admin'), resetAuth);
 router.post('/force-reconnect', authenticateJWT, authorizeRole('admin'), forceReconnect);
 
+router.get('/templates', (req, res) => {
+  res.json(templateList);
+});
 export default router;
