@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { AUTH_CONFIG } from '../config/auth.config.js';
+import sessionManager from '../services/session.manager.js';
 
 export async function login(req, res) {
   try {
@@ -55,5 +56,24 @@ export function validateToken(req, res) {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+// Endpoint para verificar la salud del servicio WhatsApp
+export async function checkWhatsAppHealth(req, res) {
+  try {
+    const healthStatus = await sessionManager.checkWhatsAppHealth();
+    
+    res.json({
+      success: true,
+      whatsapp: healthStatus,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error verificando salud de WhatsApp',
+      error: error.message 
+    });
   }
 }

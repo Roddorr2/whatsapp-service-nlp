@@ -5,6 +5,7 @@ import logger from '../utils/logger.js';
 import { emitQrStatusUpdate } from '../app.js';
 import { getWhatsAppConfig } from '../config/whatsapp.config.js';
 import { chatbotFlow } from '../chatbot/chatbotFlow.js';
+import sessionManager from './session.manager.js';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -44,6 +45,12 @@ const connectionState = {
   reconnectTimer: null,
   isReconnecting: false,
   lastConnectionAttempt: 0,
+  
+  // Estado para health checks con backoff
+  healthCheckAttempts: 0,
+  lastHealthCheckTimestamp: 0,
+  lastHealthCheckResult: null,
+  healthCheckCacheDuration: 45000, // Cache de 45 segundos (más agresivo para evitar spam)
 
   conversations: new Map(), // key: userId, value: { step: number, context: any }
 };
@@ -138,7 +145,7 @@ export async function startWhatsAppBot() {
   // 🔹 Ahora sí registramos los eventos
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message?.conversation) return;
+    if (!msg.message?.conversation || msg.key.fromMe) return;
 
     const userId = msg.key.remoteJid;
     const text = msg.message.conversation;
@@ -159,29 +166,25 @@ export async function startWhatsAppBot() {
 
 // Función para limpiar completamente el estado
 async function cleanupConnection() {
-  try {
-    if (connectionState.socket) {
-      try {
-        // Remover todos los event listeners antes de cerrar
-        if (connectionState.socket.ev) {
-          connectionState.socket.ev.removeAllListeners();
-        }
-
-        await connectionState.socket.end();
-        logger.info('Connection closed successfully');
-      } catch (error) {
-        logger.debug('Error closing connection', { error: error.message });
-      }
-    }
-  } catch (error) {
-    logger.error('Error in cleanupConnection', { error: error.message, stack: error.stack });
-  } finally {
-    connectionState.socket = null;
-    connectionState.qrData = null;
-    connectionState.isConnecting = false;
-    connectionState.connectionStatus = 'disconnected';
-    connectionState.isReconnecting = false;
+  if (connectionState.socket?.ev) {
+    connectionState.socket.ev.removeAllListeners();
   }
+
+  if (connectionState.socket) {
+    try {
+      await connectionState.socket.end();
+      logger.debug('Socket closed successfully');
+    } catch (error) {
+      logger.debug('Socket already closed or error closing', { error: error.message });
+    }
+  }
+
+  // Resetear estado (siempre se ejecuta)
+  connectionState.socket = null;
+  connectionState.qrData = null;
+  connectionState.isConnecting = false;
+  connectionState.connectionStatus = 'disconnected';
+  connectionState.isReconnecting = false;
 }
 
 // Función para obtener estado del QR
@@ -309,12 +312,12 @@ async function generateNewQR(session) {
   });
 }
 
-// Función para reconexión automática (CORREGIDA)
+// Función para reconexión automática con Health Check inteligente y backoff
 async function attemptReconnect() {
   const config = getWhatsAppConfig();
   const maxAttempts = config.stability?.maxReconnectAttempts || 5;
 
-  // CORREGIDO: Verificar correctamente el límite de intentos
+  // GUARDIÁN: Verificar límite de intentos
   if (connectionState.isReconnecting || connectionState.reconnectAttempts >= maxAttempts) {
     logger.warn('Max reconnection attempts reached or already reconnecting', {
       attempts: connectionState.reconnectAttempts,
@@ -329,37 +332,178 @@ async function attemptReconnect() {
   }
 
   connectionState.isReconnecting = true;
+  
+  // Calcular delay con backoff exponencial para reconexiones
+  const reconnectDelays = [3000, 10000, 30000, 60000, 120000]; // 3s, 10s, 30s, 60s, 120s
+  const reconnectIndex = Math.min(connectionState.reconnectAttempts, reconnectDelays.length - 1);
+  const reconnectDelay = reconnectDelays[reconnectIndex];
+  
   connectionState.reconnectTimer = setTimeout(async () => {
     try {
-      logger.info('Attempting automatic reconnection', {
-        attempt: connectionState.reconnectAttempts + 1,
-        maxAttempts: maxAttempts
+      const attemptNumber = connectionState.reconnectAttempts + 1;
+      
+      logger.info('🔄 Attempting automatic reconnection', {
+        attempt: attemptNumber,
+        maxAttempts: maxAttempts,
+        delay: `${reconnectDelay / 1000}s`
       });
 
       connectionState.reconnectAttempts++;
+
+      // 🏥 HEALTH CHECK: Después del 2do intento fallido
+      if (connectionState.reconnectAttempts >= 2) {
+        // 💾 Verificar caché de health check (30 segundos)
+        const now = Date.now();
+        const cacheValid = connectionState.lastHealthCheckResult && 
+                          (now - connectionState.lastHealthCheckTimestamp) < connectionState.healthCheckCacheDuration;
+        
+        let healthCheck;
+        
+        if (cacheValid) {
+          logger.info('💾 Usando resultado cacheado de health check', {
+            age: `${Math.floor((now - connectionState.lastHealthCheckTimestamp) / 1000)}s`,
+            status: connectionState.lastHealthCheckResult.status
+          });
+          healthCheck = connectionState.lastHealthCheckResult;
+        } else {
+          logger.info('🏥 Verificando salud de WhatsApp antes de reintentar...');
+          
+          healthCheck = await sessionManager.checkWhatsAppHealth();
+          
+          // Guardar en caché
+          connectionState.lastHealthCheckResult = healthCheck;
+          connectionState.lastHealthCheckTimestamp = now;
+        }
+        
+        if (!healthCheck.available) {
+          connectionState.healthCheckAttempts++;
+          
+          // Backoff exponencial inteligente: 1m → 2m → 5m → 10m → 15m → MANTENIMIENTO (15m indefinido)
+          const healthCheckDelays = [60000, 120000, 300000, 600000, 900000]; // 1m, 2m, 5m, 10m, 15m
+          const healthCheckIndex = Math.min(connectionState.healthCheckAttempts - 1, healthCheckDelays.length - 1);
+          const healthCheckDelay = healthCheckDelays[healthCheckIndex];
+          
+          // Determinar si estamos en modo mantenimiento (después del 5to intento)
+          const isMaintenanceMode = connectionState.healthCheckAttempts > healthCheckDelays.length;
+          
+          logger.warn('⚠️ WhatsApp no disponible - esperando con backoff exponencial', {
+            status: healthCheck.status,
+            message: healthCheck.message,
+            attempt: connectionState.reconnectAttempts,
+            healthCheckAttempt: connectionState.healthCheckAttempts,
+            nextCheckIn: `${healthCheckDelay / 1000}s`,
+            mode: isMaintenanceMode ? 'maintenance' : 'backoff',
+            note: isMaintenanceMode ? 'Verificación periódica cada 15 minutos' : 'Escalando tiempo de espera'
+          });
+          
+          connectionState.isReconnecting = false;
+          connectionState.connectionStatus = 'waiting_for_service';
+          
+          // Aplicar backoff exponencial o modo mantenimiento
+          setTimeout(() => {
+            if (isMaintenanceMode) {
+              logger.info('🔧 Modo mantenimiento: Verificación periódica de WhatsApp...');
+            } else {
+              logger.info('⏰ Reintentando verificación de WhatsApp después de backoff...');
+            }
+            
+            // No incrementar reconnectAttempts aquí, solo healthCheckAttempts
+            connectionState.reconnectAttempts--; // Compensar el incremento anterior
+            attemptReconnect();
+          }, healthCheckDelay);
+          
+          return;
+        }
+        
+        // WhatsApp está disponible, resetear contador de health checks
+        logger.info('✅ WhatsApp disponible - procediendo con reconexión');
+        connectionState.healthCheckAttempts = 0;
+        
+        // 🔍 VALIDACIÓN DE CREDENCIALES: Si WhatsApp está OK
+        const validation = await sessionManager.validateCredentials();
+        
+        if (!validation.valid) {
+          logger.warn('⚠️ Credenciales detectadas como inválidas', {
+            status: validation.status,
+            reason: validation.reason
+          });
+          
+          // Si están CORRUPTAS y WhatsApp está online, es seguro limpiar
+          if (validation.status === 'corrupted') {
+            logger.error('🗑️ Credenciales corruptas confirmadas - limpiando en runtime');
+            
+            const cleanup = await sessionManager.cleanupCorruptedCredentials();
+            
+            if (cleanup.success) {
+              logger.info('✅ Credenciales corruptas eliminadas', {
+                action: cleanup.action,
+                backupPath: cleanup.backupPath
+              });
+              
+              connectionState.isReconnecting = false;
+              connectionState.connectionStatus = 'credentials_cleaned';
+              connectionState.reconnectAttempts = 0;
+              connectionState.healthCheckAttempts = 0;
+              
+              // Emitir evento para que UI sepa que necesita nuevo QR
+              emitQrStatusUpdate({
+                requiresNewQR: true,
+                reason: 'corrupted_credentials_cleaned',
+                message: 'Credenciales corruptas eliminadas. Se requiere escanear nuevo QR.'
+              });
+              
+              return;
+            }
+          }
+          
+          // Si son inválidas pero no corruptas, continuar intentando
+          logger.warn('Credenciales inválidas pero no corruptas - continuando reintentos');
+        }
+      }
+
+      // Proceder con reconexión normal
       connectionState.connectionStatus = 'connecting';
 
       await cleanupConnection();
       connectionState.socket = await createNewSession();
 
-      logger.info('Reconnection successful');
+      logger.info('✅ Reconnection successful');
       connectionState.reconnectAttempts = 0;
+      connectionState.healthCheckAttempts = 0;
       connectionState.isReconnecting = false;
+      
+      // Resetear contador de fallos en SessionManager
+      sessionManager.resetFailureCounter();
 
     } catch (error) {
-      logger.error('Reconnection failed', {
+      logger.error('❌ Reconnection failed', {
         error: error.message,
-        attempt: connectionState.reconnectAttempts
+        attempt: connectionState.reconnectAttempts,
+        stack: error.stack
       });
 
       connectionState.isReconnecting = false;
 
+      // Registrar fallo en SessionManager
+      sessionManager.recordFailedAttempt();
+
       // Intentar de nuevo si no se alcanzó el límite
       if (connectionState.reconnectAttempts < maxAttempts) {
+        logger.info(`🔄 Programando reintento ${connectionState.reconnectAttempts + 1}/${maxAttempts}`);
         attemptReconnect();
+      } else {
+        logger.error('🛑 Límite de reintentos alcanzado - se requiere intervención manual');
+        connectionState.connectionStatus = 'failed';
+        connectionState.healthCheckAttempts = 0;
+        
+        emitQrStatusUpdate({
+          requiresManualIntervention: true,
+          reason: 'max_reconnect_attempts_reached',
+          message: 'No se pudo reconectar después de múltiples intentos. Verifica la conexión.'
+        });
       }
     }
-  }, config.stability?.reconnectDelay || 3000);
+  }, reconnectDelay);
 }
 
 // Función para manejar errores de stream específicamente
@@ -446,11 +590,7 @@ async function createNewSession() {
           connectionState.isReconnecting = false;
           logger.info('WhatsApp connected successfully');
 
-          try {
-            emitQrStatusUpdate(getQRStatus());
-          } catch (emitError) {
-            logger.error('Error emitting connection status', { error: emitError.message });
-          }
+          emitQrStatusUpdate(getQRStatus());
         } else if (update.connection === 'close') {
           connectionState.connectionStatus = 'disconnected';
           connectionState.isConnecting = false;
@@ -467,11 +607,7 @@ async function createNewSession() {
             handleStreamError(update.lastDisconnect.error, update);
           }
 
-          try {
-            emitQrStatusUpdate(getQRStatus());
-          } catch (emitError) {
-            logger.error('Error emitting disconnection status', { error: emitError.message });
-          }
+          emitQrStatusUpdate(getQRStatus());
         }
 
         // Manejar QR
