@@ -6,7 +6,7 @@ export async function login(req, res) {
   try {
     const { username, password } = req.body;
 
-    // Buscar usuario en las credenciales hardcodeadas
+    // Buscar usuario en las credenciales hardcodeadas xd
     const user = AUTH_CONFIG.users.find(u => u.username === username);
 
     if (!user || user.password !== password) {

@@ -2,7 +2,7 @@
 node_modules/
 
 # Credenciales y sesiones de WhatsApp
-auth_info/
+
 
 # Variables de entorno
 .env
