@@ -4,7 +4,7 @@ import { getTemplate, getTemplateMessage } from '../templates.js';
 import logger from '../utils/logger.js';
 import { emitQrStatusUpdate } from '../app.js';
 import { getWhatsAppConfig } from '../config/whatsapp.config.js';
-import { chatbotFlow } from '../chatbot/chatbotFlow.js';
+//import { chatbotFlow } from '../chatbot/chatbotFlow.js';  # se ha deshabilitado el chatbot para este servicio
 import sessionManager from './session.manager.js';
 import fs from 'fs';
 import path from 'path';
@@ -52,64 +52,66 @@ const connectionState = {
   lastHealthCheckResult: null,
   healthCheckCacheDuration: 45000, // Cache de 45 segundos (más agresivo para evitar spam)
 
-  conversations: new Map(), // key: userId, value: { step: number, context: any }
+  //conversations: new Map(), // key: userId, value: { step: number, context: any }
 };
 
 
 function handleIncomingMessage(userId, message) {
-  let conv = connectionState.conversations.get(userId);
-  const now = Date.now();
+  // let conv = connectionState.conversations.get(userId);
+  // const now = Date.now();
 
-  if (!conv) {
-    conv = { step: "start", lastInteraction: now, timeout: null };
-    connectionState.conversations.set(userId, conv);
-    return chatbotFlow.start.message;
-  }
+  // if (!conv) {
+  //   conv = { step: "start", lastInteraction: now, timeout: null };
+  //   connectionState.conversations.set(userId, conv);
+  //   return chatbotFlow.start.message;
+  // }
 
-  if (conv.timeout) {
-    clearTimeout(conv.timeout);
-  }
+  // if (conv.timeout) {
+  //   clearTimeout(conv.timeout);
+  // }
 
-  const currentStep = chatbotFlow[conv.step];
-  const option = message.trim();
+  // const currentStep = chatbotFlow[conv.step];
+  // const option = message.trim();
 
-  if (currentStep.next[option]) {
-    const nextStep = currentStep.next[option];
-    const nextFlow = chatbotFlow[nextStep];
+  // if (currentStep.next[option]) {
+  //   const nextStep = currentStep.next[option];
+  //   const nextFlow = chatbotFlow[nextStep];
 
-    if (nextStep === "cierre") {
-      connectionState.socket.sendMessage(userId, { text: nextFlow.message });
-      connectionState.conversations.delete(userId);
-      return;
-    }
+  //   if (nextStep === "cierre") {
+  //     connectionState.socket.sendMessage(userId, { text: nextFlow.message });
+  //     connectionState.conversations.delete(userId);
+  //     return;
+  //   }
 
-    if (Object.keys(nextFlow.next).length === 0) {
-      connectionState.socket.sendMessage(userId, { text: nextFlow.message });
+  //   if (Object.keys(nextFlow.next).length === 0) {
+  //     connectionState.socket.sendMessage(userId, { text: nextFlow.message });
 
-      setTimeout(() => {
-        connectionState.socket.sendMessage(userId, {
-          text: "✅ Gracias por tu interés, un asesor se pondrá en contacto contigo."
-        });
-        connectionState.conversations.delete(userId);
-      }, 1500); 
+  //     setTimeout(() => {
+  //       connectionState.socket.sendMessage(userId, {
+  //         text: "✅ Gracias por tu interés, un asesor se pondrá en contacto contigo."
+  //       });
+  //       connectionState.conversations.delete(userId);
+  //     }, 1500); 
 
-      return; 
-    }
+  //     return; 
+  //   }
 
-    conv.timeout = setTimeout(() => {
-      connectionState.socket.sendMessage(userId, {
-        text: "⌛ Como no interactuaste en el último minuto, voy a cerrar esta conversación.\n\n¡Hasta luego! 👋"
-      });
-      connectionState.conversations.delete(userId);
-    }, 60 * 1000);
+  //   conv.timeout = setTimeout(() => {
+  //     connectionState.socket.sendMessage(userId, {
+  //       text: "⌛ Como no interactuaste en el último minuto, voy a cerrar esta conversación.\n\n¡Hasta luego! 👋"
+  //     });
+  //     connectionState.conversations.delete(userId);
+  //   }, 60 * 1000);
 
-    connectionState.conversations.set(userId, { ...conv, step: nextStep });
-    return nextFlow.message;
-  }
+  //   connectionState.conversations.set(userId, { ...conv, step: nextStep });
+  //   return nextFlow.message;
+  // }
 
-  // 🚫 Si la opción no es válida
-  connectionState.conversations.set(userId, conv);
-  return `❌ Opción no válida.\n\n${currentStep.message}`;
+  // // 🚫 Si la opción no es válida
+  // connectionState.conversations.set(userId, conv);
+  // return `❌ Opción no válida.\n\n${currentStep.message}`;
+
+  return null; // Chatbot deshabilitado
 }
 
 
@@ -430,34 +432,29 @@ async function attemptReconnect() {
           
           // Si están CORRUPTAS y WhatsApp está online, es seguro limpiar
           if (validation.status === 'corrupted') {
-            logger.error('🗑️ Credenciales corruptas confirmadas - limpiando en runtime');
-            
-            const cleanup = await sessionManager.cleanupCorruptedCredentials();
-            
-            if (cleanup.success) {
-              logger.info('✅ Credenciales corruptas eliminadas', {
-                action: cleanup.action,
-                backupPath: cleanup.backupPath
+              logger.warn('⚠️ Credenciales corruptas detectadas - no se realizará limpieza automática', {
+                reason: validation.reason
               });
-              
+
               connectionState.isReconnecting = false;
-              connectionState.connectionStatus = 'credentials_cleaned';
-              connectionState.reconnectAttempts = 0;
-              connectionState.healthCheckAttempts = 0;
-              
-              // Emitir evento para que UI sepa que necesita nuevo QR
-              emitQrStatusUpdate({
-                requiresNewQR: true,
-                reason: 'corrupted_credentials_cleaned',
-                message: 'Credenciales corruptas eliminadas. Se requiere escanear nuevo QR.'
-              });
-              
+              connectionState.connectionStatus = 'credentials_corrupt_manual_action_required';
+
+              // Notificar UI/admin que se requiere intervención manual
+              try {
+                emitQrStatusUpdate({
+                  requiresManualIntervention: true,
+                  reason: 'corrupted_credentials_detected',
+                  message: 'Credenciales corruptas detectadas. Restaurar backup o usar endpoint admin para resetear auth_info.'
+                });
+              } catch (emitError) {
+                logger.error('Error emitting QR status update for corrupted credentials', { error: emitError.message });
+              }
+
               return;
             }
-          }
-          
-          // Si son inválidas pero no corruptas, continuar intentando
-          logger.warn('Credenciales inválidas pero no corruptas - continuando reintentos');
+
+            // Si son inválidas pero no corruptas, continuar intentando
+            logger.warn('Credenciales inválidas pero no corruptas - continuando reintentos');
         }
       }
 
@@ -483,7 +480,7 @@ async function attemptReconnect() {
       });
 
       connectionState.isReconnecting = false;
-
+      
       // Registrar fallo en SessionManager
       sessionManager.recordFailedAttempt();
 

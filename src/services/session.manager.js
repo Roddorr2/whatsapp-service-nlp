@@ -340,67 +340,9 @@ class SessionManager {
     };
   }
 
-  /**
-   * Limpia credenciales corruptas (con backup de seguridad)
-   * @returns {Promise<Object>} Resultado de la limpieza
-   */
-  async cleanupCorruptedCredentials() {
-    try {
-      const authPath = path.resolve(process.cwd(), CONFIG.AUTH_FOLDER);
-      
-      if (!fs.existsSync(authPath)) {
-        logger.info('No hay carpeta auth_info para limpiar');
-        return { success: true, action: 'nothing_to_clean' };
-      }
-
-      // Crear backup antes de eliminar
-      const timestamp = Date.now();
-      const backupPath = path.resolve(process.cwd(), `auth_info_backup_${timestamp}`);
-      
-      try {
-        // Renombrar carpeta original a backup
-        fs.renameSync(authPath, backupPath);
-        logger.info('🗑️ Credenciales corruptas respaldadas', { backupPath });
-        
-        // Crear carpeta limpia nueva
-        fs.mkdirSync(authPath, { recursive: true });
-        logger.info('✅ Carpeta auth_info recreada');
-        
-        return {
-          success: true,
-          action: 'cleaned_with_backup',
-          backupPath: backupPath
-        };
-        
-      } catch (renameError) {
-        logger.error('Error creando backup, intentando eliminación directa', { 
-          error: renameError.message 
-        });
-        
-        // Fallback: eliminar sin backup
-        fs.rmSync(authPath, { recursive: true, force: true });
-        fs.mkdirSync(authPath, { recursive: true });
-        
-        return {
-          success: true,
-          action: 'cleaned_no_backup',
-          warning: 'No se pudo crear backup'
-        };
-      }
-      
-    } catch (error) {
-      logger.error('❌ Error al limpiar credenciales corruptas', { 
-        error: error.message,
-        stack: error.stack 
-      });
-      
-      return {
-        success: false,
-        action: 'cleanup_failed',
-        error: error.message
-      };
-    }
-  }
+  // Nota: La función de limpieza automática de credenciales corruptas fue eliminada
+  // para evitar borrados automáticos del directorio `auth_info`. Si se detectan
+  // credenciales corruptas, se requiere intervención manual (restore/endpoint).
 
   /**
    * Registra un intento fallido de reconexión
@@ -507,48 +449,26 @@ class SessionManager {
           reason: validation.reason 
         });
 
-        // Manejar credenciales corruptas
-        if (validation.status === 'corrupted' && CONFIG.AUTO_CLEAN_CORRUPTED) {
-          // 🛡️ PROTECCIÓN: Verificar salud de WhatsApp antes de limpiar
-          logger.info('🛡️ Verificando salud de WhatsApp antes de limpiar credenciales...');
-          const healthCheck = await this.checkWhatsAppHealth();
-          
-          if (!healthCheck.available) {
-            logger.warn('⚠️ WhatsApp no disponible - NO se limpiarán credenciales', {
-              whatsappStatus: healthCheck.status,
-              reason: healthCheck.message
-            });
-            
-            this.markOperationEnd();
-            
-            return {
-              success: false,
-              status: 'whatsapp_unavailable',
-              message: 'No se puede validar sesión: WhatsApp no responde. Credenciales preservadas.',
-              requiresQR: false, // NO requiere QR, solo esperar
-              whatsappHealth: healthCheck,
-              recommendation: 'Reintentar cuando WhatsApp esté disponible'
-            };
-          }
-          
-          // WhatsApp está disponible, es seguro limpiar
-          logger.info('🧹 WhatsApp disponible - Procediendo con auto-limpieza de credenciales corruptas');
-          const cleanup = await this.cleanupCorruptedCredentials();
-          
+        // Manejar credenciales corruptas: no se realiza limpieza automática
+        if (validation.status === 'corrupted') {
+          logger.warn('⚠️ Credenciales corruptas detectadas - se requiere intervención manual', {
+            reason: validation.reason
+          });
+
           this.markOperationEnd();
-          
+
           return {
             success: false,
-            status: 'credentials_cleaned',
-            message: 'Credenciales corruptas eliminadas. Se requiere escanear nuevo QR.',
+            status: 'corrupted',
+            message: 'Credenciales corruptas detectadas. Requiere intervención manual (restaurar backup o usar endpoint admin).',
+            requiresManualIntervention: true,
             requiresQR: true,
-            cleanupResult: cleanup,
-            whatsappHealth: healthCheck
+            validation: validation
           };
         }
 
         this.markOperationEnd();
-        
+
         return {
           success: false,
           status: validation.status,
