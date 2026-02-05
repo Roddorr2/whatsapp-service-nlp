@@ -131,7 +131,7 @@ Su efecto dorado 3D proyecta exclusividad, durabilidad y sofisticación, diferen
         text: `✨ Impresión en Vinilo Decorativo
  Vinilos de alta calidad, resistentes y personalizables en diseño, tamaño y acabado. Ideales para interiores y exteriores.
 `,
-        image: "imagenes/VINILDECORATIVO.jpg",
+        image: "imagenes/VINILDECORATIVO1.jpg",
       },
       2: {
         text: `🏬 Transforma tu espacio sin obras
