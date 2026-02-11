@@ -13,7 +13,10 @@ import {
   sendMessageWithImage,
   sendMessageAccept,
   sendMessageReject,
-  sendMessageWithImageDashboard
+  sendMessageWithImageDashboard,
+  sendCampaignBatch,
+  saveTemplate,
+  activateCampaign
 } from '../controllers/message.controller.js';
 import { 
   validateSendMessage, 
@@ -48,4 +51,21 @@ router.post('/force-reconnect', authenticateJWT, authorizeRole('admin'), forceRe
 router.get('/templates', (req, res) => {
   res.json(templateList);
 });
+
+// ===============================
+// Nuevas rutas para el frontend
+// ===============================
+
+// Reiniciar/Solicitar nuevo QR
+router.post('/restart', authenticateJWT, authorizeRole('admin'), requestNewQr);
+
+// Subir/guardar plantilla con imagen
+router.post('/template', authenticateJWT, authorizeRole('admin'), upload.single('image'), saveTemplate);
+
+// Activar campaña
+router.post('/activate', authenticateJWT, authorizeRole('admin'), activateCampaign);
+
+// Enviar campaña en lotes (batch)
+router.post('/send-campaign-batch', authenticateJWT, authorizeRole('admin'), upload.single('image'), sendCampaignBatch);
+
 export default router;

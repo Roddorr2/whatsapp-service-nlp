@@ -1401,6 +1401,201 @@ if (!imageBuffer) {
     }
   },
 
+  // ===============================
+  // CAMPAÑA BATCH - Envío masivo
+  // ===============================
+
+  /**
+   * Valida si una imagen existe y es accesible
+   * @param {string} imagePath - Ruta de la imagen (URL o path local)
+   * @returns {Promise<{valid: boolean, buffer?: Buffer, error?: string}>}
+   */
+  async validateImage(imagePath) {
+    try {
+      if (!imagePath) {
+        return { valid: false, error: 'Ruta de imagen no proporcionada' };
+      }
+
+      const imageBuffer = await getImageBase64(imagePath);
+      
+      if (!imageBuffer) {
+        return { valid: false, error: 'No se pudo cargar la imagen' };
+      }
+
+      // Validar tamaño máximo (16MB para WhatsApp)
+      const maxSize = 16 * 1024 * 1024;
+      if (imageBuffer.length > maxSize) {
+        return { valid: false, error: 'La imagen excede el tamaño máximo de 16MB' };
+      }
+
+      // Validar que sea un buffer válido de imagen
+      const isValidImage = this.isValidImageBuffer(imageBuffer);
+      if (!isValidImage) {
+        return { valid: false, error: 'El archivo no es una imagen válida' };
+      }
+
+      return { valid: true, buffer: imageBuffer, size: imageBuffer.length };
+    } catch (error) {
+      logger.error('Error validando imagen', { imagePath, error: error.message });
+      return { valid: false, error: error.message };
+    }
+  },
+
+  /**
+   * Verifica si un buffer es una imagen válida basándose en magic bytes
+   */
+  isValidImageBuffer(buffer) {
+    if (!buffer || buffer.length < 4) return false;
+    
+    // JPEG: FF D8 FF
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return true;
+    
+    // PNG: 89 50 4E 47
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return true;
+    
+    // GIF: 47 49 46 38
+    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) return true;
+    
+    // WebP: 52 49 46 46 ... 57 45 42 50
+    if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) {
+      if (buffer.length >= 12 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+        return true;
+      }
+    }
+    
+    return false;
+  },
+
+  /**
+   * Envía una campaña en batch con rate limiting
+   * @param {Object} params - Parámetros de la campaña
+   * @returns {Promise<Object>} Resultado del envío
+   */
+  async sendCampaignBatch({ campania_id, chunk_number, recipients, message, image_url, id_servicio }) {
+    const results = {};
+    let successful = 0;
+    let failed = 0;
+
+    console.log(`\n🚀 [Campaña ${campania_id}] Iniciando chunk ${chunk_number} con ${recipients.length} destinatarios`);
+    
+    // Verificar conexión
+    if (!connectionState.socket || connectionState.connectionStatus !== 'connected') {
+      throw new Error('WhatsApp no está conectado. Por favor, escanea el código QR.');
+    }
+
+    // Descargar imagen una sola vez
+    let imageBuffer = null;
+    if (image_url) {
+      try {
+        console.log(`📥 Descargando imagen desde: ${image_url}`);
+        const imageResponse = await fetch(image_url);
+        
+        if (!imageResponse.ok) {
+          throw new Error(`Error al descargar imagen: ${imageResponse.status} ${imageResponse.statusText}`);
+        }
+        
+        imageBuffer = await imageResponse.arrayBuffer();
+        console.log(`✅ Imagen descargada: ${(imageBuffer.byteLength / 1024).toFixed(2)} KB`);
+      } catch (error) {
+        console.error(`❌ Error descargando imagen:`, error.message);
+        throw new Error(`No se pudo descargar la imagen de la campaña: ${error.message}`);
+      }
+    }
+
+    // Procesar cada destinatario con rate limiting
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i];
+      const { id_modalservicio, nombre, telefono } = recipient;
+
+      try {
+        console.log(`\n📤 [${i + 1}/${recipients.length}] Enviando a ${nombre} (${telefono})...`);
+
+        // Formatear teléfono (asegurar que tenga @s.whatsapp.net)
+        const formattedPhone = telefono.includes('@') 
+          ? telefono 
+          : `${telefono}@s.whatsapp.net`;
+
+        // Preparar mensaje
+        let messagePayload;
+        if (imageBuffer) {
+          messagePayload = {
+            image: Buffer.from(imageBuffer),
+            caption: `Hola ${nombre}! 👋\n\n${message}`
+          };
+        } else {
+          messagePayload = {
+            text: `Hola ${nombre}! 👋\n\n${message}`
+          };
+        }
+
+        // Enviar mensaje
+        const result = await connectionState.socket.sendMessage(formattedPhone, messagePayload);
+
+        results[id_modalservicio] = {
+          success: true,
+          messageId: result.key.id,
+          sentAt: new Date().toISOString()
+        };
+
+        successful++;
+        console.log(`✅ Enviado exitosamente a ${nombre}`);
+
+        // Rate limiting: Esperar entre 4-7 segundos entre mensajes
+        if (i < recipients.length - 1) {
+          const delay = Math.floor(Math.random() * 3000) + 4000; // 4-7 segundos
+          console.log(`⏳ Esperando ${(delay / 1000).toFixed(1)}s antes del siguiente envío...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+      } catch (error) {
+        console.error(`❌ Error enviando a ${nombre} (${telefono}):`, error.message);
+        
+        results[id_modalservicio] = {
+          success: false,
+          error: error.message || 'Error desconocido'
+        };
+
+        failed++;
+
+        // Si hay error de conexión, detener el batch
+        if (error.message.includes('disconnected') || error.message.includes('not-authorized')) {
+          console.error(`🛑 Error crítico de conexión. Deteniendo batch.`);
+          
+          // Marcar los restantes como fallidos
+          for (let j = i + 1; j < recipients.length; j++) {
+            results[recipients[j].id_modalservicio] = {
+              success: false,
+              error: 'Batch detenido por error de conexión'
+            };
+            failed++;
+          }
+          
+          break;
+        }
+
+        // Continuar con el siguiente destinatario
+        // Pequeña pausa adicional después de un error
+        if (i < recipients.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    console.log(`\n📊 [Campaña ${campania_id}] Chunk ${chunk_number} completado:`);
+    console.log(`   ✅ Exitosos: ${successful}`);
+    console.log(`   ❌ Fallidos: ${failed}`);
+
+    return {
+      campania_id,
+      chunk_number,
+      id_servicio,
+      total: recipients.length,
+      successful,
+      failed,
+      results
+    };
+  },
+
   // Método para enviar mensajes simples (aceptación/rechazo)
   async sendSimpleMessage({ phone, message, type, useTemplate = false }) {
     if (!connectionState.socket?.user) {
