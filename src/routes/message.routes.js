@@ -57,7 +57,7 @@ router.get('/templates', (req, res) => {
 // ===============================
 
 // Reiniciar/Solicitar nuevo QR
-router.post('/restart', authenticateJWT, authorizeRole('admin'), requestNewQr);
+router.post('/whatsapp/restart', authenticateJWT, authorizeRole('admin'), requestNewQr);
 
 // Subir/guardar plantilla con imagen
 router.post('/template', authenticateJWT, authorizeRole('admin'), upload.single('image'), saveTemplate);

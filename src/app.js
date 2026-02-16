@@ -75,34 +75,65 @@ app.use('/api', messageRoutes);
 
 // WebSocket para QR status
 io.on('connection', (socket) => {
-  console.log('Cliente conectado:', socket.id);
 
-  // Verificar autenticación del token
+  console.log('Cliente conectado:', socket.id);
+  let userData = null;
+  let authMethod = 'none';
   const token = socket.handshake.auth.token;
   if (!token) {
     console.log('Se desconecto por que no hay token');
     socket.disconnect();
     return;
   }
-
-  // Verificar JWT
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      console.log('Se desconecto por que la verificacion del token es falsa');
+  const logAuthTimeline = ({ socketId, event, ...rest }) => {
+    console.log(JSON.stringify({ socketId, event, ...rest }));
+  };
+  (async () => {
+    try {
+      logAuthTimeline({ socketId: socket.id, event: 'jwt-verify-start', token });
+      userData = jwt.verify(token, process.env.JWT_SECRET);
+      authMethod = 'jwt';
+      logAuthTimeline({ socketId: socket.id, event: 'jwt-verify-success', userData });
+    } catch (err) {
+      logAuthTimeline({ socketId: socket.id, event: 'jwt-verify-fail', error: err.message });
+      // Intentar con Laravel
+      try {
+        const mainBackendUrl = process.env.MAIN_BACKEND_URL || 'http://127.0.0.1:8000';
+        logAuthTimeline({ socketId: socket.id, event: 'laravel-me-request', url: `${mainBackendUrl}/api/me`, token });
+        const response = await fetch(`${mainBackendUrl}/api/me`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        });
+        logAuthTimeline({ socketId: socket.id, event: 'laravel-me-response', status: response.status });
+        if (response.ok) {
+          const data = await response.json();
+          userData = {
+            userId: data.user?.id || data.id,
+            username: data.user?.name || data.name
+          };
+          authMethod = 'laravel';
+          logAuthTimeline({ socketId: socket.id, event: 'laravel-auth-success', userData });
+        }
+      } catch (fetchErr) {
+        logAuthTimeline({ socketId: socket.id, event: 'laravel-auth-error', message: fetchErr.message, ip: socket.handshake.address });
+        console.error('Error socket auth Laravel:', fetchErr.message);
+      }
+    }
+    if (!userData) {
       socket.disconnect();
       return;
     }
-
-    // Guardar información del usuario en el socket
-    socket.userId = decoded.userId;
-    socket.user = decoded;
-
+    logAuthTimeline({ socketId: socket.id, event: 'authenticated', token, userData, method: authMethod, ip: socket.handshake.address });
+    socket.userId = userData.userId;
+    socket.user = userData;
     // Enviar estado inicial del QR
     const qrStatus = whatsappService.getQRStatus();
     socket.emit('qr-status-update', qrStatus);
-
-    console.log('Usuario autenticado:', decoded.username);
-  });
+    console.log('Usuario autenticado:', userData.username);
+  })();
 
   // Unirse a la sala del usuario
   socket.on('join-user', (userId) => {
