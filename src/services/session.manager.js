@@ -563,6 +563,67 @@ class SessionManager {
     sessionState.lastHealthCheckTimestamp = 0;
     logger.info('🔄 Estado del SessionManager reseteado');
   }
+
+  /**
+   * Elimina el folder `auth_info` de forma segura cuando se detecta
+   * que la desconexión fue causada por credenciales corruptas o fallas
+   * de autenticación (por ejemplo, 401). Esta operación solo se ejecuta
+   * si `AUTO_CLEAN_CORRUPTED` está activado en configuración.
+   * @param {Object} lastDisconnect
+   * @returns {Object} resultado
+   */
+  async cleanAuthIfCorrupted(lastDisconnect) {
+    try {
+      if (!CONFIG.AUTO_CLEAN_CORRUPTED) {
+        return { cleaned: false, reason: 'auto_clean_disabled' };
+      }
+
+      if (!lastDisconnect) {
+        return { cleaned: false, reason: 'no_disconnect_info' };
+      }
+
+      const err = lastDisconnect.error || lastDisconnect;
+
+      // Detectar señales típicas de fallo de autenticación / credenciales
+      const statusCode = err?.statusCode || err?.output?.statusCode || err?.data?.reason || null;
+      const message = String(err?.message || err?.output?.payload?.message || '').toLowerCase();
+
+      const authFailure = (
+        statusCode === 401 ||
+        String(statusCode) === '401' ||
+        message.includes('unauthorized') ||
+        message.includes('connection failure') ||
+        message.includes('invalid') ||
+        message.includes('credentials') ||
+        err?.data?.reason === '401'
+      );
+
+      if (!authFailure) {
+        return { cleaned: false, reason: 'not_auth_failure' };
+      }
+
+      const authPath = path.resolve(process.cwd(), CONFIG.AUTH_FOLDER);
+      if (!fs.existsSync(authPath)) {
+        logger.info('🗂️ auth_info no existe, nada que limpiar');
+        return { cleaned: false, reason: 'auth_missing' };
+      }
+
+      // Realizar limpieza segura
+      logger.warn('🧹 AUTO CLEAN: Eliminando auth_info por fallo de autenticación', { authPath });
+      try {
+        fs.rmSync(authPath, { recursive: true, force: true });
+        fs.mkdirSync(authPath, { recursive: true });
+        logger.info('🗑️ auth_info eliminado y recreado por auto-clean');
+        return { cleaned: true, reason: 'cleaned_by_auto' };
+      } catch (rmErr) {
+        logger.error('❌ Error eliminando auth_info en auto-clean', { error: rmErr.message });
+        return { cleaned: false, reason: 'rm_error', error: rmErr.message };
+      }
+    } catch (error) {
+      logger.error('❌ Error en cleanAuthIfCorrupted', { error: error.message });
+      return { cleaned: false, reason: 'exception', error: error.message };
+    }
+  }
 }
 
 // ============================================

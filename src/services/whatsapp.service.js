@@ -2,6 +2,7 @@ import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore } from
 import QRCode from 'qrcode';
 import { getTemplate, getTemplateMessage } from '../templates.js';
 import logger from '../utils/logger.js';
+import whatsappSessionLogger from '../utils/whatsappSessionLogger.js';
 import { emitQrStatusUpdate } from '../app.js';
 import { getWhatsAppConfig } from '../config/whatsapp.config.js';
 //import { chatbotFlow } from '../chatbot/chatbotFlow.js';  # se ha deshabilitado el chatbot para este servicio
@@ -565,7 +566,7 @@ async function createNewSession() {
     sock.ev.on('creds.update', saveCreds);
 
     // Configurar event handlers para mejor manejo de conexión
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
       try {
         logger.info('Connection update', {
           connection: update.connection,
@@ -597,11 +598,32 @@ async function createNewSession() {
             statusCode: update.lastDisconnect?.statusCode
           });
 
-          // Manejar errores de stream específicamente
-          if (update.lastDisconnect?.error?.data?.attrs?.code === '515' ||
-            update.lastDisconnect?.error?.message?.includes('Stream Errored') ||
-            update.lastDisconnect?.error?.message?.includes('restart required')) {
-            handleStreamError(update.lastDisconnect.error, update);
+          // Manejo sencillo del motivo de desconexión: si el motivo indica
+          // un fallo de autenticación / restart necesario, limpiamos el
+          // socket y el QR para permitir que el frontend solicite uno nuevo.
+          try {
+            const lastErrMsg = (update.lastDisconnect?.error?.message || '').toString().toLowerCase();
+            const statusCode = update.lastDisconnect?.statusCode || update.lastDisconnect?.error?.output?.statusCode;
+            const authFailure = statusCode === 401 || lastErrMsg.includes('401') || lastErrMsg.includes('restart required') || lastErrMsg.includes('logged out') || lastErrMsg.includes('connection failure');
+
+            if (authFailure) {
+              logger.warn('Disconnect indicates auth failure; clearing socket and QR', { statusCode, message: lastErrMsg });
+              try {
+                if (connectionState.socket) {
+                  connectionState.socket.ev.removeAllListeners();
+                  await connectionState.socket.end();
+                }
+              } catch (err) {
+                logger.debug('Error closing socket after auth failure', { error: err.message });
+              }
+
+              connectionState.socket = null;
+              connectionState.qrData = null;
+              connectionState.isConnecting = false;
+              connectionState.isReconnecting = false;
+            }
+          } catch (err) {
+            logger.error('Error handling simple disconnect logic', { error: err.message });
           }
 
           emitQrStatusUpdate(getQRStatus());
@@ -773,6 +795,8 @@ async function getImageBase64(imgPath) {
 // API Pública
 export default {
   async requestQR(userId) {
+      whatsappSessionLogger.logQrRequest(userId);
+      whatsappSessionLogger.logQrStatus('system', connectionState.connectionStatus);
     
     logger.info('Requesting new QR code', { userId });    
     // GUARDÍAN: Si ya estamos conectando o reconectando, no hacer nada.
@@ -817,6 +841,9 @@ export default {
 
       connectionState.isConnecting = true;
       connectionState.connectionStatus = 'connecting';
+
+      // Definir el delay para forzar el QR (en milisegundos)
+      const forceQrDelay = 1000; // 3 segundos, ajusta según tu lógica
 
       try {
         await cleanupConnection();
@@ -865,6 +892,8 @@ export default {
   },
 
   async expireQR(reason, userId) {
+      whatsappSessionLogger.logRestart(userId);
+      whatsappSessionLogger.logQrCode('system', { qrString });
     logger.info('Expiring QR code', { reason, userId });
 
     if (connectionState.qrData) {
