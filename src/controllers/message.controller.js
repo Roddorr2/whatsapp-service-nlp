@@ -680,8 +680,6 @@ export async function sendCampaignBatch(req, res) {
       image_url = req.body.image_url;
     }
 
-    console.log('Usuario ejecutando sendCampaignBatch:', req.user);
-
     const result = await whatsappService.sendCampaignBatch({
       campania_id,
       chunk_number: chunk_number || 1,
@@ -693,11 +691,6 @@ export async function sendCampaignBatch(req, res) {
 
     res.json({
       success: true,
-      executedBy: {
-        userId: req.user?.userId || req.user?.id || null,
-        username: req.user?.username || null,
-        isSystemJob: !!req.user?.isSystemJob
-      },
       ...result
     });
   } catch (error) {
@@ -756,14 +749,6 @@ export async function activateCampaign(req, res) {
     // Aquí se puede agregar lógica para programar la campaña
     // Por ahora solo confirmamos la activación
 
-    const createdBy = {
-      userId: req.user?.userId || req.user?.id || null,
-      username: req.user?.username || null,
-      isSystemJob: !!req.user?.isSystemJob
-    };
-
-    console.log('Campaña activada por:', createdBy);
-
     res.json({
       success: true,
       message: "Campaña activada",
@@ -775,8 +760,7 @@ export async function activateCampaign(req, res) {
         messageType,
         scheduledAt: scheduledAt || new Date().toISOString(),
         status: 'activated',
-        activatedAt: new Date().toISOString(),
-        createdBy
+        activatedAt: new Date().toISOString()
       }
     });
   } catch (error) {
