@@ -1,6 +1,4 @@
 import jwt from 'jsonwebtoken';
-import fs from 'fs';
-import path from 'path';
 
 // Middleware para verificar API Key (para servicios)
 export function apiKeyAuth(req, res, next) {
@@ -26,31 +24,8 @@ export async function authenticateJWT(req, res, next) {
   }
   const token = authHeader.split(' ')[1];
   let userData = null;
-  // Intentar verificar con clave pública RS256 (si existe en storge/keys/jwt_public.pem)
-  const pubKeyPath = path.resolve(process.cwd(), 'storge', 'keys', 'jwt_public.pem');
-  let publicKey = process.env.WHATSAPP_JWT_PUBLIC_KEY || null;
   try {
-    if (!publicKey && fs.existsSync(pubKeyPath)) {
-      publicKey = fs.readFileSync(pubKeyPath, 'utf8');
-      console.info('Usando clave pública JWT desde', pubKeyPath);
-    }
-  } catch (e) {
-    // seguir con fallback
-  }
-
-  try {
-    if (publicKey) {
-      // Intentar verificación RS256
-      const payload = jwt.verify(token, publicKey, { algorithms: ['RS256'] });
-      userData = {
-        userId: payload.sub || payload.id || payload.user?.id,
-        username: payload.name || payload.user?.name || payload.username,
-        role: payload.rol || payload.role || payload.user?.rol || payload.user?.role
-      };
-    } else {
-      // Intentar verificación HMAC/HS256 con JWT_SECRET
-      userData = jwt.verify(token, process.env.JWT_SECRET);
-    }
+    userData = jwt.verify(token, process.env.JWT_SECRET);
   } catch (err) {
     // Intentar con Laravel Backend (/api/me) si no se puede verificar localmente
     try {
@@ -77,17 +52,6 @@ export async function authenticateJWT(req, res, next) {
   if (!userData) {
     return res.status(401).json({ success: false, message: 'Token inválido o expirado' });
   }
-
-  // Normalizar rol (mapear variantes como 'admin'|'administrator' -> 'administrador')
-  const normalizeRole = (r) => {
-    if (!r) return 'user';
-    const rr = String(r).toLowerCase();
-    if (['admin', 'administrator', 'administrador'].includes(rr)) return 'administrador';
-    if (['marketing'].includes(rr)) return 'marketing';
-    return rr;
-  };
-
-  userData.role = normalizeRole(userData.role);
   req.user = userData;
   next();
 }
