@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { server } from './src/app.js';
 import { AUTH_CONFIG } from './src/config/auth.config.js';
 import sessionManager from './src/services/session.manager.js';
-import logger from './src/utils/logger.js';
+const logger = console;
 
 const PORT = process.env.PORT || 5111;
 

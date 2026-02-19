@@ -17,7 +17,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import logger from '../utils/logger.js';
+// logger removed: using console for logging to keep dependency minimal
 import dotenv from 'dotenv';
 import https from 'https';
 
@@ -51,11 +51,88 @@ const sessionState = {
   lastHealthCheckTimestamp: 0
 };
 
+// Runtime helpers para debounce y coordinación de limpieza
+const runtime = {
+  pendingCloseTimer: null,
+  lastDisconnectInfo: null,
+  isClearing: false
+};
+
+
 
 // CLASE PRINCIPAL: SessionManager
 
 
 class SessionManager {
+  _isLogoutIndicator(lastDisconnect) {
+    if (!lastDisconnect) return false;
+    const msg = (lastDisconnect.error && (lastDisconnect.error.message || lastDisconnect.error.toString())) || '';
+    const status = lastDisconnect.statusCode || lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.data?.reason || '';
+
+    const indicators = [
+      'logged out',
+      'invalid_session',
+      'authentication',
+      'auth',
+      'bad session',
+      '401',
+      '403'
+    ];
+
+    const lower = String(msg).toLowerCase();
+    if (indicators.some(i => lower.includes(String(i).toLowerCase()))) return true;
+    if (String(status) === '401' || String(status) === '403') return true;
+    return false;
+  }
+
+  /**
+   * Maneja las actualizaciones de conexión emitidas por Baileys.
+   * Aplica debounce y delega a `cleanAuthIfCorrupted` cuando se confirma logout/auth-failure.
+   */
+  async handleConnectionUpdate(update = {}) {
+    const { connection, lastDisconnect } = update;
+    runtime.lastDisconnectInfo = lastDisconnect || null;
+
+    if (connection === 'open') {
+      if (runtime.pendingCloseTimer) {
+        clearTimeout(runtime.pendingCloseTimer);
+        runtime.pendingCloseTimer = null;
+        console.info('SessionManager: connection reopened, cancelled pending clear');
+      }
+      return;
+    }
+
+    if (connection === 'close') {
+      const isLogout = this._isLogoutIndicator(lastDisconnect);
+
+      if (runtime.pendingCloseTimer) {
+        clearTimeout(runtime.pendingCloseTimer);
+        runtime.pendingCloseTimer = null;
+      }
+
+      const waitMs = isLogout ? 2000 : 30000;
+      console.info('SessionManager: connection closed detected, scheduling verify', { waitMs, isLogout });
+
+      runtime.pendingCloseTimer = setTimeout(async () => {
+        try {
+          runtime.pendingCloseTimer = null;
+          if (runtime.isClearing) {
+            console.info('SessionManager: clear already in progress, skipping');
+            return;
+          }
+          const res = await this.cleanAuthIfCorrupted(lastDisconnect);
+          if (res.cleaned) {
+            console.info('SessionManager: auth cleaned by cleanAuthIfCorrupted', { result: res });
+          } else {
+            console.info('SessionManager: cleanAuthIfCorrupted decided not to clean', { result: res });
+          }
+        } catch (error) {
+          console.error('SessionManager: error in scheduled verify', { error: error.message });
+        }
+      }, waitMs);
+    }
+  }
+
   
   /**
    * Verifica si el servicio de WhatsApp está disponible
@@ -71,7 +148,7 @@ class SessionManager {
       };
     }
 
-    logger.info('🏥 Verificando salud del servicio WhatsApp...');
+    console.info('🏥 Verificando salud del servicio WhatsApp...');
 
     try {
       const isAvailable = await this._pingWhatsApp();
@@ -79,7 +156,7 @@ class SessionManager {
       if (isAvailable) {
         sessionState.whatsappServiceStatus = 'online';
         sessionState.lastHealthCheckTimestamp = Date.now();
-        logger.info('✅ Servicio WhatsApp disponible');
+        console.info('✅ Servicio WhatsApp disponible');
         
         return {
           available: true,
@@ -89,7 +166,7 @@ class SessionManager {
       } else {
         sessionState.whatsappServiceStatus = 'offline';
         sessionState.lastHealthCheckTimestamp = Date.now();
-        logger.warn('⚠️ Servicio WhatsApp no responde');
+        console.warn('⚠️ Servicio WhatsApp no responde');
         
         return {
           available: false,
@@ -100,7 +177,7 @@ class SessionManager {
       }
     } catch (error) {
       sessionState.whatsappServiceStatus = 'unknown';
-      logger.error('❌ Error verificando salud de WhatsApp', { error: error.message });
+      console.error('❌ Error verificando salud de WhatsApp', { error: error.message });
       
       return {
         available: false,
@@ -120,7 +197,7 @@ class SessionManager {
   _pingWhatsApp() {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        logger.warn('⏱️ Timeout en health check de WhatsApp');
+        console.warn('⏱️ Timeout en health check de WhatsApp');
         resolve(false);
       }, CONFIG.HEALTH_CHECK_TIMEOUT);
 
@@ -136,7 +213,7 @@ class SessionManager {
         clearTimeout(timeout);
         // Cualquier respuesta (incluso 404) significa que el servicio está activo
         const isOnline = res.statusCode >= 200 && res.statusCode < 500;
-        logger.debug('📡 WhatsApp Health Check', { 
+        console.debug('📡 WhatsApp Health Check', { 
           statusCode: res.statusCode,
           isOnline 
         });
@@ -145,7 +222,7 @@ class SessionManager {
 
       req.on('error', (error) => {
         clearTimeout(timeout);
-        logger.debug('🔌 WhatsApp no alcanzable', { error: error.code });
+        console.debug('🔌 WhatsApp no alcanzable', { error: error.code });
         resolve(false);
       });
 
@@ -170,7 +247,7 @@ class SessionManager {
 
       // 1. Verificar que existe la carpeta auth_info
       if (!fs.existsSync(authPath)) {
-        logger.info('📂 Carpeta auth_info no encontrada');
+        console.info('📂 Carpeta auth_info no encontrada');
         sessionState.credentialsStatus = 'missing';
         return {
           valid: false,
@@ -181,7 +258,7 @@ class SessionManager {
 
       // 2. Verificar que existe el archivo creds.json
       if (!fs.existsSync(credsPath)) {
-        logger.warn('📄 Archivo creds.json no encontrado');
+        console.warn('📄 Archivo creds.json no encontrado');
         sessionState.credentialsStatus = 'missing';
         return {
           valid: false,
@@ -195,7 +272,7 @@ class SessionManager {
       
       // Verificar tamaño mínimo (archivos vacíos o muy pequeños son sospechosos)
       if (fileStats.size < 50) {
-        logger.warn('⚠️ Archivo creds.json sospechosamente pequeño', { size: fileStats.size });
+        console.warn('⚠️ Archivo creds.json sospechosamente pequeño', { size: fileStats.size });
         sessionState.credentialsStatus = 'corrupted';
         return {
           valid: false,
@@ -213,7 +290,7 @@ class SessionManager {
         credsContent = fs.readFileSync(credsPath, 'utf-8');
         credsParsed = JSON.parse(credsContent);
       } catch (parseError) {
-        logger.error('❌ Error parseando creds.json', { error: parseError.message });
+        console.error('❌ Error parseando creds.json', { error: parseError.message });
         sessionState.credentialsStatus = 'corrupted';
         return {
           valid: false,
@@ -225,7 +302,7 @@ class SessionManager {
 
       // 5. Validar estructura mínima requerida
       if (!credsParsed || typeof credsParsed !== 'object') {
-        logger.warn('⚠️ Estructura de credenciales inválida');
+        console.warn('⚠️ Estructura de credenciales inválida');
         sessionState.credentialsStatus = 'invalid';
         return {
           valid: false,
@@ -236,7 +313,7 @@ class SessionManager {
 
       // 6. Verificar campos esenciales (me.id indica una sesión válida)
       if (!credsParsed.me || !credsParsed.me.id) {
-        logger.warn('⚠️ Credenciales incompletas - falta información del usuario');
+        console.warn('⚠️ Credenciales incompletas - falta información del usuario');
         sessionState.credentialsStatus = 'invalid';
         return {
           valid: false,
@@ -253,7 +330,7 @@ class SessionManager {
         f === 'creds.json'
       );
 
-      logger.info('✅ Credenciales válidas encontradas', { 
+      console.info('✅ Credenciales válidas encontradas', { 
         userId: credsParsed.me.id,
         sessionFiles: sessionFiles.length,
         size: fileStats.size 
@@ -271,7 +348,7 @@ class SessionManager {
       };
 
     } catch (error) {
-      logger.error('❌ Error validando credenciales', { 
+      console.error('❌ Error validando credenciales', { 
         error: error.message,
         stack: error.stack 
       });
@@ -349,7 +426,7 @@ class SessionManager {
    */
   recordFailedAttempt() {
     sessionState.consecutiveFailures++;
-    logger.warn('⚠️ Intento de reconexión fallido', {
+    console.warn('⚠️ Intento de reconexión fallido', {
       attempt: sessionState.consecutiveFailures,
       maxAttempts: CONFIG.MAX_RECONNECT_ATTEMPTS
     });
@@ -360,7 +437,7 @@ class SessionManager {
    */
   resetFailureCounter() {
     if (sessionState.consecutiveFailures > 0) {
-      logger.info('✅ Reseteando contador de fallos tras reconexión exitosa');
+      console.info('✅ Reseteando contador de fallos tras reconexión exitosa');
     }
     sessionState.consecutiveFailures = 0;
   }
@@ -414,14 +491,14 @@ class SessionManager {
    * @returns {Promise<Object>} Resultado de la operación
    */
   async autoRefreshSession(reconnectCallback) {
-    logger.info('🔄 SessionManager: Iniciando auto-refresh de sesión');
+    console.info('🔄 SessionManager: Iniciando auto-refresh de sesión');
 
     try {
       // PASO 1: Verificar si puede intentar reconectar
       const canAttempt = this.canAttemptReconnect();
       
       if (!canAttempt.allowed) {
-        logger.warn('⛔ Auto-refresh bloqueado', { 
+        console.warn('⛔ Auto-refresh bloqueado', { 
           reason: canAttempt.reason,
           code: canAttempt.code 
         });
@@ -435,7 +512,7 @@ class SessionManager {
         };
       }
 
-      logger.info(`📊 Intento ${canAttempt.attemptNumber} de ${canAttempt.maxAttempts}`);
+      console.info(`📊 Intento ${canAttempt.attemptNumber} de ${canAttempt.maxAttempts}`);
 
       // PASO 2: Marcar inicio de operación
       this.markOperationStart();
@@ -444,14 +521,14 @@ class SessionManager {
       const validation = await this.validateCredentials();
 
       if (!validation.valid) {
-        logger.warn('⚠️ Credenciales inválidas o faltantes', { 
+        console.warn('⚠️ Credenciales inválidas o faltantes', { 
           status: validation.status,
           reason: validation.reason 
         });
 
         // Manejar credenciales corruptas: no se realiza limpieza automática
         if (validation.status === 'corrupted') {
-          logger.warn('⚠️ Credenciales corruptas detectadas - se requiere intervención manual', {
+          console.warn('⚠️ Credenciales corruptas detectadas - se requiere intervención manual', {
             reason: validation.reason
           });
 
@@ -478,7 +555,7 @@ class SessionManager {
         };
       }
 
-      logger.info('✅ Credenciales válidas, procediendo con reconexión', {
+      console.info('✅ Credenciales válidas, procediendo con reconexión', {
         userId: validation.userId
       });
 
@@ -494,7 +571,7 @@ class SessionManager {
         const result = await Promise.race([reconnectPromise, timeoutPromise]);
 
         // PASO 5: Reconexión exitosa
-        logger.info('✅ Reconexión exitosa');
+        console.info('✅ Reconexión exitosa');
         this.resetFailureCounter();
         this.markOperationEnd();
 
@@ -509,11 +586,11 @@ class SessionManager {
       } catch (reconnectError) {
         // PASO 6: Manejo de errores de reconexión
         if (reconnectError.message === 'TIMEOUT') {
-          logger.error('⏱️ Timeout al intentar reconectar', { 
+          console.error('⏱️ Timeout al intentar reconectar', { 
             timeout: CONFIG.RECONNECT_TIMEOUT 
           });
         } else {
-          logger.error('❌ Error en reconexión', { 
+          console.error('❌ Error en reconexión', { 
             error: reconnectError.message,
             stack: reconnectError.stack 
           });
@@ -533,7 +610,7 @@ class SessionManager {
       }
 
     } catch (error) {
-      logger.error('❌ Error crítico en auto-refresh', { 
+      console.error('❌ Error crítico en auto-refresh', { 
         error: error.message,
         stack: error.stack 
       });
@@ -561,7 +638,7 @@ class SessionManager {
     sessionState.lastValidationTimestamp = 0;
     sessionState.whatsappServiceStatus = 'unknown';
     sessionState.lastHealthCheckTimestamp = 0;
-    logger.info('🔄 Estado del SessionManager reseteado');
+    console.info('🔄 Estado del SessionManager reseteado');
   }
 
   /**
@@ -584,7 +661,7 @@ class SessionManager {
 
       const err = lastDisconnect.error || lastDisconnect;
 
-      // Detectar señales típicas de fallo de autenticación / credenciales
+      // Detectar señales típicas de fallo de autenticación / credenciales o logout desde cliente
       const statusCode = err?.statusCode || err?.output?.statusCode || err?.data?.reason || null;
       const message = String(err?.message || err?.output?.payload?.message || '').toLowerCase();
 
@@ -598,19 +675,22 @@ class SessionManager {
         err?.data?.reason === '401'
       );
 
-      if (!authFailure) {
-        return { cleaned: false, reason: 'not_auth_failure' };
+      // También consideramos explícitamente señales de "logout" detectadas por _isLogoutIndicator
+      const isLogout = this._isLogoutIndicator(lastDisconnect);
+
+      if (!authFailure && !isLogout) {
+        return { cleaned: false, reason: 'not_auth_failure_or_logout' };
       }
 
       const authPath = path.resolve(process.cwd(), CONFIG.AUTH_FOLDER);
       if (!fs.existsSync(authPath)) {
-        logger.info('🗂️ auth_info no existe, nada que limpiar');
+        console.info('🗂️ auth_info no existe, nada que limpiar');
         return { cleaned: false, reason: 'auth_missing' };
       }
 
       // Eliminar de forma segura todos los ficheros y subdirectorios dentro de auth_info
       // (conservar la carpeta `auth_info` en sí misma).
-      logger.warn('🧹 AUTO CLEAN: Limpiando contenido de auth_info por fallo de autenticación', { authPath });
+      console.warn('🧹 AUTO CLEAN: Limpiando contenido de auth_info por fallo de autenticación', { authPath });
       try {
         const entries = fs.readdirSync(authPath, { withFileTypes: true });
 
@@ -618,20 +698,20 @@ class SessionManager {
           const target = path.join(authPath, entry.name);
           try {
             fs.rmSync(target, { recursive: true, force: true });
-            logger.info('🗑️ Eliminado', { path: target });
+            console.info('🗑️ Eliminado', { path: target });
           } catch (entryErr) {
-            logger.warn('⚠️ No se pudo eliminar entrada dentro de auth_info', { path: target, error: entryErr.message });
+            console.warn('⚠️ No se pudo eliminar entrada dentro de auth_info', { path: target, error: entryErr.message });
           }
         }
 
-        logger.info('✅ auth_info limpiado correctamente (contenido eliminado)');
+        console.info('✅ auth_info limpiado correctamente (contenido eliminado)');
         return { cleaned: true, reason: 'cleaned_by_auto' };
       } catch (rmErr) {
-        logger.error('❌ Error limpiando auth_info en auto-clean', { error: rmErr.message });
+        console.error('❌ Error limpiando auth_info en auto-clean', { error: rmErr.message });
         return { cleaned: false, reason: 'rm_error', error: rmErr.message };
       }
     } catch (error) {
-      logger.error('❌ Error en cleanAuthIfCorrupted', { error: error.message });
+      console.error('❌ Error en cleanAuthIfCorrupted', { error: error.message });
       return { cleaned: false, reason: 'exception', error: error.message };
     }
   }

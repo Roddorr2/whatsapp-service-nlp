@@ -1,8 +1,9 @@
 import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { getTemplate, getTemplateMessage } from '../templates.js';
-import logger from '../utils/logger.js';
 import whatsappSessionLogger from '../utils/whatsappSessionLogger.js';
+// Use console as fallback logger to avoid the custom logger dependency
+const logger = console;
 import { emitQrStatusUpdate } from '../app.js';
 import { getWhatsAppConfig } from '../config/whatsapp.config.js';
 //import { chatbotFlow } from '../chatbot/chatbotFlow.js';  # se ha deshabilitado el chatbot para este servicio
@@ -14,25 +15,19 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', {
+  console.error('Uncaught Exception:', {
     error: error.message,
     stack: error.stack,
     timestamp: new Date().toISOString()
   });
-
-  // No cerrar el proceso, solo loggear el error
-  console.error('❌ Uncaught Exception:', error.message);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection:', {
+  console.error('Unhandled Rejection:', {
     reason: reason?.message || reason,
     promise: promise,
     timestamp: new Date().toISOString()
   });
-
-  // No cerrar el proceso, solo loggear el error
-  console.error('❌ Unhandled Rejection:', reason);
 });
 
 const connectionState = {
@@ -164,7 +159,7 @@ export async function startWhatsAppBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  logger.info("✅ WhatsApp Bot iniciado y escuchando mensajes...");
+  console.info("✅ WhatsApp Bot iniciado y escuchando mensajes...");
 }
 
 
@@ -175,11 +170,11 @@ async function cleanupConnection() {
   }
 
   if (connectionState.socket) {
-    try {
+      try {
       await connectionState.socket.end();
-      logger.debug('Socket closed successfully');
+      console.debug('Socket closed successfully');
     } catch (error) {
-      logger.debug('Socket already closed or error closing', { error: error.message });
+      console.debug('Socket already closed or error closing', { error: error.message });
     }
   }
 
@@ -241,20 +236,20 @@ async function generateQRFromUpdate(qrString) {
     };
 
     // Emitir actualización inmediata
-    try {
+      try {
       emitQrStatusUpdate(getQRStatus());
     } catch (emitError) {
-      logger.error('Error emitting QR status update', { error: emitError.message });
+      console.error('Error emitting QR status update', { error: emitError.message });
     }
 
-    logger.info('QR generated from connection update', {
+    console.info('QR generated from connection update', {
       format: qrResult.format,
       size: qrResult.size,
       mimeType: qrResult.mimeType,
       fallback: qrResult.fallback || false
     });
   } catch (error) {
-    logger.error('Error generating QR from update', { error: error.message, stack: error.stack });
+    console.error('Error generating QR from update', { error: error.message, stack: error.stack });
   }
 }
 
@@ -269,7 +264,7 @@ async function generateNewQR(session) {
         try {
           session.ev.off('connection.update', qrHandler);
         } catch (error) {
-          logger.error('Error removing QR handler', { error: error.message });
+            console.error('Error removing QR handler', { error: error.message });
         }
         reject(new Error('Timeout al generar QR'));
       }, qrTimeout);
@@ -296,13 +291,13 @@ async function generateNewQR(session) {
                   };
                   resolve(qrResult.image);
                 } catch (error) {
-                  logger.error('Error setting QR data', { error: error.message });
+                  console.error('Error setting QR data', { error: error.message });
                   reject(error);
                 }
               })
               .catch(reject);
           } catch (error) {
-            logger.error('Error in QR handler', { error: error.message });
+            console.error('Error in QR handler', { error: error.message });
             reject(error);
           }
         }
@@ -310,7 +305,7 @@ async function generateNewQR(session) {
 
       session.ev.on('connection.update', qrHandler);
     } catch (error) {
-      logger.error('Error setting up QR generation', { error: error.message });
+      console.error('Error setting up QR generation', { error: error.message });
       reject(error);
     }
   });
@@ -323,7 +318,7 @@ async function attemptReconnect() {
 
   // GUARDIÁN: Verificar límite de intentos
   if (connectionState.isReconnecting || connectionState.reconnectAttempts >= maxAttempts) {
-    logger.warn('Max reconnection attempts reached or already reconnecting', {
+    console.warn('Max reconnection attempts reached or already reconnecting', {
       attempts: connectionState.reconnectAttempts,
       maxAttempts: maxAttempts,
       isReconnecting: connectionState.isReconnecting
@@ -346,7 +341,7 @@ async function attemptReconnect() {
     try {
       const attemptNumber = connectionState.reconnectAttempts + 1;
       
-      logger.info('🔄 Attempting automatic reconnection', {
+      console.info('🔄 Attempting automatic reconnection', {
         attempt: attemptNumber,
         maxAttempts: maxAttempts,
         delay: `${reconnectDelay / 1000}s`
@@ -364,13 +359,13 @@ async function attemptReconnect() {
         let healthCheck;
         
         if (cacheValid) {
-          logger.info('💾 Usando resultado cacheado de health check', {
+          console.info('💾 Usando resultado cacheado de health check', {
             age: `${Math.floor((now - connectionState.lastHealthCheckTimestamp) / 1000)}s`,
             status: connectionState.lastHealthCheckResult.status
           });
           healthCheck = connectionState.lastHealthCheckResult;
         } else {
-          logger.info('🏥 Verificando salud de WhatsApp antes de reintentar...');
+          console.info('🏥 Verificando salud de WhatsApp antes de reintentar...');
           
           healthCheck = await sessionManager.checkWhatsAppHealth();
           
@@ -390,7 +385,7 @@ async function attemptReconnect() {
           // Determinar si estamos en modo mantenimiento (después del 5to intento)
           const isMaintenanceMode = connectionState.healthCheckAttempts > healthCheckDelays.length;
           
-          logger.warn('⚠️ WhatsApp no disponible - esperando con backoff exponencial', {
+          console.warn('⚠️ WhatsApp no disponible - esperando con backoff exponencial', {
             status: healthCheck.status,
             message: healthCheck.message,
             attempt: connectionState.reconnectAttempts,
@@ -406,9 +401,9 @@ async function attemptReconnect() {
           // Aplicar backoff exponencial o modo mantenimiento
           setTimeout(() => {
             if (isMaintenanceMode) {
-              logger.info('🔧 Modo mantenimiento: Verificación periódica de WhatsApp...');
+              console.info('🔧 Modo mantenimiento: Verificación periódica de WhatsApp...');
             } else {
-              logger.info('⏰ Reintentando verificación de WhatsApp después de backoff...');
+              console.info('⏰ Reintentando verificación de WhatsApp después de backoff...');
             }
             
             // No incrementar reconnectAttempts aquí, solo healthCheckAttempts
@@ -420,21 +415,21 @@ async function attemptReconnect() {
         }
         
         // WhatsApp está disponible, resetear contador de health checks
-        logger.info('✅ WhatsApp disponible - procediendo con reconexión');
+        console.info('✅ WhatsApp disponible - procediendo con reconexión');
         connectionState.healthCheckAttempts = 0;
         
         // 🔍 VALIDACIÓN DE CREDENCIALES: Si WhatsApp está OK
         const validation = await sessionManager.validateCredentials();
         
         if (!validation.valid) {
-          logger.warn('⚠️ Credenciales detectadas como inválidas', {
+          console.warn('⚠️ Credenciales detectadas como inválidas', {
             status: validation.status,
             reason: validation.reason
           });
           
           // Si están CORRUPTAS y WhatsApp está online, es seguro limpiar
           if (validation.status === 'corrupted') {
-              logger.warn('⚠️ Credenciales corruptas detectadas - no se realizará limpieza automática', {
+              console.warn('⚠️ Credenciales corruptas detectadas - no se realizará limpieza automática', {
                 reason: validation.reason
               });
 
@@ -449,14 +444,14 @@ async function attemptReconnect() {
                   message: 'Credenciales corruptas detectadas. Restaurar backup o usar endpoint admin para resetear auth_info.'
                 });
               } catch (emitError) {
-                logger.error('Error emitting QR status update for corrupted credentials', { error: emitError.message });
+                console.error('Error emitting QR status update for corrupted credentials', { error: emitError.message });
               }
 
               return;
             }
 
             // Si son inválidas pero no corruptas, continuar intentando
-            logger.warn('Credenciales inválidas pero no corruptas - continuando reintentos');
+            console.warn('Credenciales inválidas pero no corruptas - continuando reintentos');
         }
       }
 
@@ -466,7 +461,7 @@ async function attemptReconnect() {
       await cleanupConnection();
       connectionState.socket = await createNewSession();
 
-      logger.info('✅ Reconnection successful');
+      console.info('✅ Reconnection successful');
       connectionState.reconnectAttempts = 0;
       connectionState.healthCheckAttempts = 0;
       connectionState.isReconnecting = false;
@@ -475,7 +470,7 @@ async function attemptReconnect() {
       sessionManager.resetFailureCounter();
 
     } catch (error) {
-      logger.error('❌ Reconnection failed', {
+      console.error('❌ Reconnection failed', {
         error: error.message,
         attempt: connectionState.reconnectAttempts,
         stack: error.stack
@@ -488,10 +483,10 @@ async function attemptReconnect() {
 
       // Intentar de nuevo si no se alcanzó el límite
       if (connectionState.reconnectAttempts < maxAttempts) {
-        logger.info(`🔄 Programando reintento ${connectionState.reconnectAttempts + 1}/${maxAttempts}`);
+        console.info(`🔄 Programando reintento ${connectionState.reconnectAttempts + 1}/${maxAttempts}`);
         attemptReconnect();
       } else {
-        logger.error('🛑 Límite de reintentos alcanzado - se requiere intervención manual');
+        console.error('🛑 Límite de reintentos alcanzado - se requiere intervención manual');
         connectionState.connectionStatus = 'failed';
         connectionState.healthCheckAttempts = 0;
         
@@ -509,7 +504,7 @@ async function attemptReconnect() {
 function handleStreamError(error, update) {
   const config = getWhatsAppConfig();
 
-  logger.warn('Stream error detected', {
+  console.warn('Stream error detected', {
     error: error.message,
     code: update?.lastDisconnect?.error?.data?.attrs?.code,
     statusCode: update?.lastDisconnect?.statusCode
@@ -520,7 +515,7 @@ function handleStreamError(error, update) {
     error.message?.includes('Stream Errored') ||
     update?.lastDisconnect?.error?.message?.includes('restart required')) {
 
-    logger.info('Stream error requires restart, attempting reconnection');
+    console.info('Stream error requires restart, attempting reconnection');
 
     // Limpiar estado actual
     connectionState.connectionStatus = 'disconnected';
@@ -575,7 +570,10 @@ async function createNewSession() {
           qr: update.qr ? 'present' : 'absent'
         });
 
-        // Manejar cambios de estado de conexión
+        // Delegate to session manager for debounce/verification and potential auth_info cleanup
+        try { sessionManager.handleConnectionUpdate(update); } catch (e) { logger.error('sessionManager.handleConnectionUpdate failed', { error: e?.message }); }
+
+        // Manejar cambios de estado de conexión (vista local para UI/estado)
         if (update.connection === 'connecting') {
           connectionState.connectionStatus = 'connecting';
           connectionState.isConnecting = true;
@@ -584,7 +582,6 @@ async function createNewSession() {
         } else if (update.connection === 'open') {
           connectionState.connectionStatus = 'connected';
           connectionState.isConnecting = false;
-          // connectionState.qrData = null; // Mantener QR hasta eliminación manual
           connectionState.reconnectAttempts = 0;
           connectionState.isReconnecting = false;
           logger.info('WhatsApp connected successfully');
@@ -599,41 +596,18 @@ async function createNewSession() {
             statusCode: update.lastDisconnect?.statusCode
           });
 
-          // Manejo sencillo del motivo de desconexión: si el motivo indica
-          // un fallo de autenticación / restart necesario, limpiamos el
-          // socket y el QR para permitir que el frontend solicite uno nuevo.
-          try {
-            const lastErrMsg = (update.lastDisconnect?.error?.message || '').toString().toLowerCase();
-            const statusCode = update.lastDisconnect?.statusCode || update.lastDisconnect?.error?.output?.statusCode;
-            const authFailure = statusCode === 401 || lastErrMsg.includes('401') || lastErrMsg.includes('restart required') || lastErrMsg.includes('logged out') || lastErrMsg.includes('connection failure');
-
-            if (authFailure) {
-              logger.warn('Disconnect indicates auth failure; clearing socket and QR', { statusCode, message: lastErrMsg });
-              try {
-                if (connectionState.socket) {
-                  connectionState.socket.ev.removeAllListeners();
-                  await connectionState.socket.end();
-                }
-              } catch (err) {
-                logger.debug('Error closing socket after auth failure', { error: err.message });
-              }
-
-              connectionState.socket = null;
-              connectionState.qrData = null;
-              connectionState.isConnecting = false;
-              connectionState.isReconnecting = false;
-              try {
-                clearAuthContent();
-                logger.info('auth_info cleared by clearAuthTrigger');
-              } catch (clearErr) {
-                logger.error('Error executing clearAuthContent trigger', { error: clearErr.message });
-              }
-            }
-          } catch (err) {
-            logger.error('Error handling simple disconnect logic', { error: err.message });
+          // Manejar errores de stream específicamente (restart required)
+          if (update.lastDisconnect?.error?.data?.attrs?.code === '515' ||
+            update.lastDisconnect?.error?.message?.includes('Stream Errored') ||
+            update.lastDisconnect?.error?.message?.includes('restart required')) {
+            handleStreamError(update.lastDisconnect.error, update);
           }
 
-          emitQrStatusUpdate(getQRStatus());
+          try {
+            emitQrStatusUpdate(getQRStatus());
+          } catch (emitError) {
+            logger.error('Error emitting disconnection status', { error: emitError.message });
+          }
         }
 
         // Manejar QR
