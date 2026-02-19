@@ -696,9 +696,8 @@ class SessionManager {
 
         for (const entry of entries) {
           const target = path.join(authPath, entry.name);
-          try {
+            try {
             fs.rmSync(target, { recursive: true, force: true });
-            console.info('🗑️ Eliminado', { path: target });
           } catch (entryErr) {
             console.warn('⚠️ No se pudo eliminar entrada dentro de auth_info', { path: target, error: entryErr.message });
           }
