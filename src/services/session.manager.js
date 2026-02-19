@@ -608,15 +608,26 @@ class SessionManager {
         return { cleaned: false, reason: 'auth_missing' };
       }
 
-      // Realizar limpieza segura
-      logger.warn('🧹 AUTO CLEAN: Eliminando auth_info por fallo de autenticación', { authPath });
+      // Eliminar de forma segura todos los ficheros y subdirectorios dentro de auth_info
+      // (conservar la carpeta `auth_info` en sí misma).
+      logger.warn('🧹 AUTO CLEAN: Limpiando contenido de auth_info por fallo de autenticación', { authPath });
       try {
-        fs.rmSync(authPath, { recursive: true, force: true });
-        fs.mkdirSync(authPath, { recursive: true });
-        logger.info('🗑️ auth_info eliminado y recreado por auto-clean');
+        const entries = fs.readdirSync(authPath, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const target = path.join(authPath, entry.name);
+          try {
+            fs.rmSync(target, { recursive: true, force: true });
+            logger.info('🗑️ Eliminado', { path: target });
+          } catch (entryErr) {
+            logger.warn('⚠️ No se pudo eliminar entrada dentro de auth_info', { path: target, error: entryErr.message });
+          }
+        }
+
+        logger.info('✅ auth_info limpiado correctamente (contenido eliminado)');
         return { cleaned: true, reason: 'cleaned_by_auto' };
       } catch (rmErr) {
-        logger.error('❌ Error eliminando auth_info en auto-clean', { error: rmErr.message });
+        logger.error('❌ Error limpiando auth_info en auto-clean', { error: rmErr.message });
         return { cleaned: false, reason: 'rm_error', error: rmErr.message };
       }
     } catch (error) {
@@ -626,8 +637,5 @@ class SessionManager {
   }
 }
 
-// ============================================
-// EXPORTAR INSTANCIA SINGLETON
-// ============================================
 
 export default new SessionManager();

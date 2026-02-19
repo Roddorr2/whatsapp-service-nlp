@@ -7,6 +7,7 @@ import { emitQrStatusUpdate } from '../app.js';
 import { getWhatsAppConfig } from '../config/whatsapp.config.js';
 //import { chatbotFlow } from '../chatbot/chatbotFlow.js';  # se ha deshabilitado el chatbot para este servicio
 import sessionManager from './session.manager.js';
+import { clearAuthContent } from '../triggers/clearAuthTrigger.js';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -621,6 +622,12 @@ async function createNewSession() {
               connectionState.qrData = null;
               connectionState.isConnecting = false;
               connectionState.isReconnecting = false;
+              try {
+                clearAuthContent();
+                logger.info('auth_info cleared by clearAuthTrigger');
+              } catch (clearErr) {
+                logger.error('Error executing clearAuthContent trigger', { error: clearErr.message });
+              }
             }
           } catch (err) {
             logger.error('Error handling simple disconnect logic', { error: err.message });
