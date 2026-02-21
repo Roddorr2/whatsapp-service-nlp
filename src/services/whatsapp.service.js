@@ -1,36 +1,33 @@
 import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { getTemplate, getTemplateMessage } from '../templates.js';
-import logger from '../utils/logger.js';
+import whatsappSessionLogger from '../utils/whatsappSessionLogger.js';
+// Use console as fallback logger to avoid the custom logger dependency
+const logger = console;
 import { emitQrStatusUpdate } from '../app.js';
 import { getWhatsAppConfig } from '../config/whatsapp.config.js';
-import { chatbotFlow } from '../chatbot/chatbotFlow.js';
+//import { chatbotFlow } from '../chatbot/chatbotFlow.js';  # se ha deshabilitado el chatbot para este servicio
 import sessionManager from './session.manager.js';
+import { clearAuthContent } from '../triggers/clearAuthTrigger.js';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
 dotenv.config();
 
 process.on('uncaughtException', (error) => {
-  logger.error('Uncaught Exception:', {
+  console.error('Uncaught Exception:', {
     error: error.message,
     stack: error.stack,
     timestamp: new Date().toISOString()
   });
-
-  // No cerrar el proceso, solo loggear el error
-  console.error('❌ Uncaught Exception:', error.message);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error('Unhandled Rejection:', {
+  console.error('Unhandled Rejection:', {
     reason: reason?.message || reason,
     promise: promise,
     timestamp: new Date().toISOString()
   });
-
-  // No cerrar el proceso, solo loggear el error
-  console.error('❌ Unhandled Rejection:', reason);
 });
 
 const connectionState = {
@@ -52,64 +49,66 @@ const connectionState = {
   lastHealthCheckResult: null,
   healthCheckCacheDuration: 45000, // Cache de 45 segundos (más agresivo para evitar spam)
 
-  conversations: new Map(), // key: userId, value: { step: number, context: any }
+  //conversations: new Map(), // key: userId, value: { step: number, context: any }
 };
 
 
 function handleIncomingMessage(userId, message) {
-  let conv = connectionState.conversations.get(userId);
-  const now = Date.now();
+  // let conv = connectionState.conversations.get(userId);
+  // const now = Date.now();
 
-  if (!conv) {
-    conv = { step: "start", lastInteraction: now, timeout: null };
-    connectionState.conversations.set(userId, conv);
-    return chatbotFlow.start.message;
-  }
+  // if (!conv) {
+  //   conv = { step: "start", lastInteraction: now, timeout: null };
+  //   connectionState.conversations.set(userId, conv);
+  //   return chatbotFlow.start.message;
+  // }
 
-  if (conv.timeout) {
-    clearTimeout(conv.timeout);
-  }
+  // if (conv.timeout) {
+  //   clearTimeout(conv.timeout);
+  // }
 
-  const currentStep = chatbotFlow[conv.step];
-  const option = message.trim();
+  // const currentStep = chatbotFlow[conv.step];
+  // const option = message.trim();
 
-  if (currentStep.next[option]) {
-    const nextStep = currentStep.next[option];
-    const nextFlow = chatbotFlow[nextStep];
+  // if (currentStep.next[option]) {
+  //   const nextStep = currentStep.next[option];
+  //   const nextFlow = chatbotFlow[nextStep];
 
-    if (nextStep === "cierre") {
-      connectionState.socket.sendMessage(userId, { text: nextFlow.message });
-      connectionState.conversations.delete(userId);
-      return;
-    }
+  //   if (nextStep === "cierre") {
+  //     connectionState.socket.sendMessage(userId, { text: nextFlow.message });
+  //     connectionState.conversations.delete(userId);
+  //     return;
+  //   }
 
-    if (Object.keys(nextFlow.next).length === 0) {
-      connectionState.socket.sendMessage(userId, { text: nextFlow.message });
+  //   if (Object.keys(nextFlow.next).length === 0) {
+  //     connectionState.socket.sendMessage(userId, { text: nextFlow.message });
 
-      setTimeout(() => {
-        connectionState.socket.sendMessage(userId, {
-          text: "✅ Gracias por tu interés, un asesor se pondrá en contacto contigo."
-        });
-        connectionState.conversations.delete(userId);
-      }, 1500); 
+  //     setTimeout(() => {
+  //       connectionState.socket.sendMessage(userId, {
+  //         text: "✅ Gracias por tu interés, un asesor se pondrá en contacto contigo."
+  //       });
+  //       connectionState.conversations.delete(userId);
+  //     }, 1500); 
 
-      return; 
-    }
+  //     return; 
+  //   }
 
-    conv.timeout = setTimeout(() => {
-      connectionState.socket.sendMessage(userId, {
-        text: "⌛ Como no interactuaste en el último minuto, voy a cerrar esta conversación.\n\n¡Hasta luego! 👋"
-      });
-      connectionState.conversations.delete(userId);
-    }, 60 * 1000);
+  //   conv.timeout = setTimeout(() => {
+  //     connectionState.socket.sendMessage(userId, {
+  //       text: "⌛ Como no interactuaste en el último minuto, voy a cerrar esta conversación.\n\n¡Hasta luego! 👋"
+  //     });
+  //     connectionState.conversations.delete(userId);
+  //   }, 60 * 1000);
 
-    connectionState.conversations.set(userId, { ...conv, step: nextStep });
-    return nextFlow.message;
-  }
+  //   connectionState.conversations.set(userId, { ...conv, step: nextStep });
+  //   return nextFlow.message;
+  // }
 
-  // 🚫 Si la opción no es válida
-  connectionState.conversations.set(userId, conv);
-  return `❌ Opción no válida.\n\n${currentStep.message}`;
+  // // 🚫 Si la opción no es válida
+  // connectionState.conversations.set(userId, conv);
+  // return `❌ Opción no válida.\n\n${currentStep.message}`;
+
+  return null; // Chatbot deshabilitado
 }
 
 
@@ -160,7 +159,7 @@ export async function startWhatsAppBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  logger.info("✅ WhatsApp Bot iniciado y escuchando mensajes...");
+  console.info("✅ WhatsApp Bot iniciado y escuchando mensajes...");
 }
 
 
@@ -171,11 +170,11 @@ async function cleanupConnection() {
   }
 
   if (connectionState.socket) {
-    try {
+      try {
       await connectionState.socket.end();
-      logger.debug('Socket closed successfully');
+      console.debug('Socket closed successfully');
     } catch (error) {
-      logger.debug('Socket already closed or error closing', { error: error.message });
+      console.debug('Socket already closed or error closing', { error: error.message });
     }
   }
 
@@ -237,20 +236,20 @@ async function generateQRFromUpdate(qrString) {
     };
 
     // Emitir actualización inmediata
-    try {
+      try {
       emitQrStatusUpdate(getQRStatus());
     } catch (emitError) {
-      logger.error('Error emitting QR status update', { error: emitError.message });
+      console.error('Error emitting QR status update', { error: emitError.message });
     }
 
-    logger.info('QR generated from connection update', {
+    console.info('QR generated from connection update', {
       format: qrResult.format,
       size: qrResult.size,
       mimeType: qrResult.mimeType,
       fallback: qrResult.fallback || false
     });
   } catch (error) {
-    logger.error('Error generating QR from update', { error: error.message, stack: error.stack });
+    console.error('Error generating QR from update', { error: error.message, stack: error.stack });
   }
 }
 
@@ -265,7 +264,7 @@ async function generateNewQR(session) {
         try {
           session.ev.off('connection.update', qrHandler);
         } catch (error) {
-          logger.error('Error removing QR handler', { error: error.message });
+            console.error('Error removing QR handler', { error: error.message });
         }
         reject(new Error('Timeout al generar QR'));
       }, qrTimeout);
@@ -292,13 +291,13 @@ async function generateNewQR(session) {
                   };
                   resolve(qrResult.image);
                 } catch (error) {
-                  logger.error('Error setting QR data', { error: error.message });
+                  console.error('Error setting QR data', { error: error.message });
                   reject(error);
                 }
               })
               .catch(reject);
           } catch (error) {
-            logger.error('Error in QR handler', { error: error.message });
+            console.error('Error in QR handler', { error: error.message });
             reject(error);
           }
         }
@@ -306,7 +305,7 @@ async function generateNewQR(session) {
 
       session.ev.on('connection.update', qrHandler);
     } catch (error) {
-      logger.error('Error setting up QR generation', { error: error.message });
+      console.error('Error setting up QR generation', { error: error.message });
       reject(error);
     }
   });
@@ -319,7 +318,7 @@ async function attemptReconnect() {
 
   // GUARDIÁN: Verificar límite de intentos
   if (connectionState.isReconnecting || connectionState.reconnectAttempts >= maxAttempts) {
-    logger.warn('Max reconnection attempts reached or already reconnecting', {
+    console.warn('Max reconnection attempts reached or already reconnecting', {
       attempts: connectionState.reconnectAttempts,
       maxAttempts: maxAttempts,
       isReconnecting: connectionState.isReconnecting
@@ -342,7 +341,7 @@ async function attemptReconnect() {
     try {
       const attemptNumber = connectionState.reconnectAttempts + 1;
       
-      logger.info('🔄 Attempting automatic reconnection', {
+      console.info('🔄 Attempting automatic reconnection', {
         attempt: attemptNumber,
         maxAttempts: maxAttempts,
         delay: `${reconnectDelay / 1000}s`
@@ -360,13 +359,13 @@ async function attemptReconnect() {
         let healthCheck;
         
         if (cacheValid) {
-          logger.info('💾 Usando resultado cacheado de health check', {
+          console.info('💾 Usando resultado cacheado de health check', {
             age: `${Math.floor((now - connectionState.lastHealthCheckTimestamp) / 1000)}s`,
             status: connectionState.lastHealthCheckResult.status
           });
           healthCheck = connectionState.lastHealthCheckResult;
         } else {
-          logger.info('🏥 Verificando salud de WhatsApp antes de reintentar...');
+          console.info('🏥 Verificando salud de WhatsApp antes de reintentar...');
           
           healthCheck = await sessionManager.checkWhatsAppHealth();
           
@@ -386,7 +385,7 @@ async function attemptReconnect() {
           // Determinar si estamos en modo mantenimiento (después del 5to intento)
           const isMaintenanceMode = connectionState.healthCheckAttempts > healthCheckDelays.length;
           
-          logger.warn('⚠️ WhatsApp no disponible - esperando con backoff exponencial', {
+          console.warn('⚠️ WhatsApp no disponible - esperando con backoff exponencial', {
             status: healthCheck.status,
             message: healthCheck.message,
             attempt: connectionState.reconnectAttempts,
@@ -402,9 +401,9 @@ async function attemptReconnect() {
           // Aplicar backoff exponencial o modo mantenimiento
           setTimeout(() => {
             if (isMaintenanceMode) {
-              logger.info('🔧 Modo mantenimiento: Verificación periódica de WhatsApp...');
+              console.info('🔧 Modo mantenimiento: Verificación periódica de WhatsApp...');
             } else {
-              logger.info('⏰ Reintentando verificación de WhatsApp después de backoff...');
+              console.info('⏰ Reintentando verificación de WhatsApp después de backoff...');
             }
             
             // No incrementar reconnectAttempts aquí, solo healthCheckAttempts
@@ -416,48 +415,43 @@ async function attemptReconnect() {
         }
         
         // WhatsApp está disponible, resetear contador de health checks
-        logger.info('✅ WhatsApp disponible - procediendo con reconexión');
+        console.info('✅ WhatsApp disponible - procediendo con reconexión');
         connectionState.healthCheckAttempts = 0;
         
         // 🔍 VALIDACIÓN DE CREDENCIALES: Si WhatsApp está OK
         const validation = await sessionManager.validateCredentials();
         
         if (!validation.valid) {
-          logger.warn('⚠️ Credenciales detectadas como inválidas', {
+          console.warn('⚠️ Credenciales detectadas como inválidas', {
             status: validation.status,
             reason: validation.reason
           });
           
           // Si están CORRUPTAS y WhatsApp está online, es seguro limpiar
           if (validation.status === 'corrupted') {
-            logger.error('🗑️ Credenciales corruptas confirmadas - limpiando en runtime');
-            
-            const cleanup = await sessionManager.cleanupCorruptedCredentials();
-            
-            if (cleanup.success) {
-              logger.info('✅ Credenciales corruptas eliminadas', {
-                action: cleanup.action,
-                backupPath: cleanup.backupPath
+              console.warn('⚠️ Credenciales corruptas detectadas - no se realizará limpieza automática', {
+                reason: validation.reason
               });
-              
+
               connectionState.isReconnecting = false;
-              connectionState.connectionStatus = 'credentials_cleaned';
-              connectionState.reconnectAttempts = 0;
-              connectionState.healthCheckAttempts = 0;
-              
-              // Emitir evento para que UI sepa que necesita nuevo QR
-              emitQrStatusUpdate({
-                requiresNewQR: true,
-                reason: 'corrupted_credentials_cleaned',
-                message: 'Credenciales corruptas eliminadas. Se requiere escanear nuevo QR.'
-              });
-              
+              connectionState.connectionStatus = 'credentials_corrupt_manual_action_required';
+
+              // Notificar UI/admin que se requiere intervención manual
+              try {
+                emitQrStatusUpdate({
+                  requiresManualIntervention: true,
+                  reason: 'corrupted_credentials_detected',
+                  message: 'Credenciales corruptas detectadas. Restaurar backup o usar endpoint admin para resetear auth_info.'
+                });
+              } catch (emitError) {
+                console.error('Error emitting QR status update for corrupted credentials', { error: emitError.message });
+              }
+
               return;
             }
-          }
-          
-          // Si son inválidas pero no corruptas, continuar intentando
-          logger.warn('Credenciales inválidas pero no corruptas - continuando reintentos');
+
+            // Si son inválidas pero no corruptas, continuar intentando
+            console.warn('Credenciales inválidas pero no corruptas - continuando reintentos');
         }
       }
 
@@ -467,7 +461,7 @@ async function attemptReconnect() {
       await cleanupConnection();
       connectionState.socket = await createNewSession();
 
-      logger.info('✅ Reconnection successful');
+      console.info('✅ Reconnection successful');
       connectionState.reconnectAttempts = 0;
       connectionState.healthCheckAttempts = 0;
       connectionState.isReconnecting = false;
@@ -476,23 +470,23 @@ async function attemptReconnect() {
       sessionManager.resetFailureCounter();
 
     } catch (error) {
-      logger.error('❌ Reconnection failed', {
+      console.error('❌ Reconnection failed', {
         error: error.message,
         attempt: connectionState.reconnectAttempts,
         stack: error.stack
       });
 
       connectionState.isReconnecting = false;
-
+      
       // Registrar fallo en SessionManager
       sessionManager.recordFailedAttempt();
 
       // Intentar de nuevo si no se alcanzó el límite
       if (connectionState.reconnectAttempts < maxAttempts) {
-        logger.info(`🔄 Programando reintento ${connectionState.reconnectAttempts + 1}/${maxAttempts}`);
+        console.info(`🔄 Programando reintento ${connectionState.reconnectAttempts + 1}/${maxAttempts}`);
         attemptReconnect();
       } else {
-        logger.error('🛑 Límite de reintentos alcanzado - se requiere intervención manual');
+        console.error('🛑 Límite de reintentos alcanzado - se requiere intervención manual');
         connectionState.connectionStatus = 'failed';
         connectionState.healthCheckAttempts = 0;
         
@@ -510,7 +504,7 @@ async function attemptReconnect() {
 function handleStreamError(error, update) {
   const config = getWhatsAppConfig();
 
-  logger.warn('Stream error detected', {
+  console.warn('Stream error detected', {
     error: error.message,
     code: update?.lastDisconnect?.error?.data?.attrs?.code,
     statusCode: update?.lastDisconnect?.statusCode
@@ -521,7 +515,7 @@ function handleStreamError(error, update) {
     error.message?.includes('Stream Errored') ||
     update?.lastDisconnect?.error?.message?.includes('restart required')) {
 
-    logger.info('Stream error requires restart, attempting reconnection');
+    console.info('Stream error requires restart, attempting reconnection');
 
     // Limpiar estado actual
     connectionState.connectionStatus = 'disconnected';
@@ -568,7 +562,7 @@ async function createNewSession() {
     sock.ev.on('creds.update', saveCreds);
 
     // Configurar event handlers para mejor manejo de conexión
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
       try {
         logger.info('Connection update', {
           connection: update.connection,
@@ -576,7 +570,10 @@ async function createNewSession() {
           qr: update.qr ? 'present' : 'absent'
         });
 
-        // Manejar cambios de estado de conexión
+        // Delegate to session manager for debounce/verification and potential auth_info cleanup
+        try { sessionManager.handleConnectionUpdate(update); } catch (e) { logger.error('sessionManager.handleConnectionUpdate failed', { error: e?.message }); }
+
+        // Manejar cambios de estado de conexión (vista local para UI/estado)
         if (update.connection === 'connecting') {
           connectionState.connectionStatus = 'connecting';
           connectionState.isConnecting = true;
@@ -585,7 +582,6 @@ async function createNewSession() {
         } else if (update.connection === 'open') {
           connectionState.connectionStatus = 'connected';
           connectionState.isConnecting = false;
-          // connectionState.qrData = null; // Mantener QR hasta eliminación manual
           connectionState.reconnectAttempts = 0;
           connectionState.isReconnecting = false;
           logger.info('WhatsApp connected successfully');
@@ -600,14 +596,18 @@ async function createNewSession() {
             statusCode: update.lastDisconnect?.statusCode
           });
 
-          // Manejar errores de stream específicamente
+          // Manejar errores de stream específicamente (restart required)
           if (update.lastDisconnect?.error?.data?.attrs?.code === '515' ||
             update.lastDisconnect?.error?.message?.includes('Stream Errored') ||
             update.lastDisconnect?.error?.message?.includes('restart required')) {
             handleStreamError(update.lastDisconnect.error, update);
           }
 
-          emitQrStatusUpdate(getQRStatus());
+          try {
+            emitQrStatusUpdate(getQRStatus());
+          } catch (emitError) {
+            logger.error('Error emitting disconnection status', { error: emitError.message });
+          }
         }
 
         // Manejar QR
@@ -776,6 +776,8 @@ async function getImageBase64(imgPath) {
 // API Pública
 export default {
   async requestQR(userId) {
+      whatsappSessionLogger.logQrRequest(userId);
+      whatsappSessionLogger.logQrStatus('system', connectionState.connectionStatus);
     
     logger.info('Requesting new QR code', { userId });    
     // GUARDÍAN: Si ya estamos conectando o reconectando, no hacer nada.
@@ -820,6 +822,9 @@ export default {
 
       connectionState.isConnecting = true;
       connectionState.connectionStatus = 'connecting';
+
+      // Definir el delay para forzar el QR (en milisegundos)
+      const forceQrDelay = 1000; // 3 segundos, ajusta según tu lógica
 
       try {
         await cleanupConnection();
@@ -868,6 +873,8 @@ export default {
   },
 
   async expireQR(reason, userId) {
+      whatsappSessionLogger.logRestart(userId);
+      whatsappSessionLogger.logQrCode('system', { qrString });
     logger.info('Expiring QR code', { reason, userId });
 
     if (connectionState.qrData) {
@@ -1402,6 +1409,201 @@ if (!imageBuffer) {
       logger.error('Error changing QR format', { error: error.message, format });
       throw error;
     }
+  },
+
+  // ===============================
+  // CAMPAÑA BATCH - Envío masivo
+  // ===============================
+
+  /**
+   * Valida si una imagen existe y es accesible
+   * @param {string} imagePath - Ruta de la imagen (URL o path local)
+   * @returns {Promise<{valid: boolean, buffer?: Buffer, error?: string}>}
+   */
+  async validateImage(imagePath) {
+    try {
+      if (!imagePath) {
+        return { valid: false, error: 'Ruta de imagen no proporcionada' };
+      }
+
+      const imageBuffer = await getImageBase64(imagePath);
+      
+      if (!imageBuffer) {
+        return { valid: false, error: 'No se pudo cargar la imagen' };
+      }
+
+      // Validar tamaño máximo (16MB para WhatsApp)
+      const maxSize = 16 * 1024 * 1024;
+      if (imageBuffer.length > maxSize) {
+        return { valid: false, error: 'La imagen excede el tamaño máximo de 16MB' };
+      }
+
+      // Validar que sea un buffer válido de imagen
+      const isValidImage = this.isValidImageBuffer(imageBuffer);
+      if (!isValidImage) {
+        return { valid: false, error: 'El archivo no es una imagen válida' };
+      }
+
+      return { valid: true, buffer: imageBuffer, size: imageBuffer.length };
+    } catch (error) {
+      logger.error('Error validando imagen', { imagePath, error: error.message });
+      return { valid: false, error: error.message };
+    }
+  },
+
+  /**
+   * Verifica si un buffer es una imagen válida basándose en magic bytes
+   */
+  isValidImageBuffer(buffer) {
+    if (!buffer || buffer.length < 4) return false;
+    
+    // JPEG: FF D8 FF
+    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return true;
+    
+    // PNG: 89 50 4E 47
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return true;
+    
+    // GIF: 47 49 46 38
+    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) return true;
+    
+    // WebP: 52 49 46 46 ... 57 45 42 50
+    if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) {
+      if (buffer.length >= 12 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+        return true;
+      }
+    }
+    
+    return false;
+  },
+
+  /**
+   * Envía una campaña en batch con rate limiting
+   * @param {Object} params - Parámetros de la campaña
+   * @returns {Promise<Object>} Resultado del envío
+   */
+  async sendCampaignBatch({ campania_id, chunk_number, recipients, message, image_url, id_servicio }) {
+    const results = {};
+    let successful = 0;
+    let failed = 0;
+
+    console.log(`\n🚀 [Campaña ${campania_id}] Iniciando chunk ${chunk_number} con ${recipients.length} destinatarios`);
+    
+    // Verificar conexión
+    if (!connectionState.socket || connectionState.connectionStatus !== 'connected') {
+      throw new Error('WhatsApp no está conectado. Por favor, escanea el código QR.');
+    }
+
+    // Descargar imagen una sola vez
+    let imageBuffer = null;
+    if (image_url) {
+      try {
+        console.log(`📥 Descargando imagen desde: ${image_url}`);
+        const imageResponse = await fetch(image_url);
+        
+        if (!imageResponse.ok) {
+          throw new Error(`Error al descargar imagen: ${imageResponse.status} ${imageResponse.statusText}`);
+        }
+        
+        imageBuffer = await imageResponse.arrayBuffer();
+        console.log(`✅ Imagen descargada: ${(imageBuffer.byteLength / 1024).toFixed(2)} KB`);
+      } catch (error) {
+        console.error(`❌ Error descargando imagen:`, error.message);
+        throw new Error(`No se pudo descargar la imagen de la campaña: ${error.message}`);
+      }
+    }
+
+    // Procesar cada destinatario con rate limiting
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i];
+      const { id_modalservicio, nombre, telefono } = recipient;
+
+      try {
+        console.log(`\n📤 [${i + 1}/${recipients.length}] Enviando a ${nombre} (${telefono})...`);
+
+        // Formatear teléfono (asegurar que tenga @s.whatsapp.net)
+        const formattedPhone = telefono.includes('@') 
+          ? telefono 
+          : `${telefono}@s.whatsapp.net`;
+
+        // Preparar mensaje
+        let messagePayload;
+        if (imageBuffer) {
+          messagePayload = {
+            image: Buffer.from(imageBuffer),
+            caption: `Hola ${nombre}! 👋\n\n${message}`
+          };
+        } else {
+          messagePayload = {
+            text: `Hola ${nombre}! 👋\n\n${message}`
+          };
+        }
+
+        // Enviar mensaje
+        const result = await connectionState.socket.sendMessage(formattedPhone, messagePayload);
+
+        results[id_modalservicio] = {
+          success: true,
+          messageId: result.key.id,
+          sentAt: new Date().toISOString()
+        };
+
+        successful++;
+        console.log(`✅ Enviado exitosamente a ${nombre}`);
+
+        // Rate limiting: Esperar entre 4-7 segundos entre mensajes
+        if (i < recipients.length - 1) {
+          const delay = Math.floor(Math.random() * 3000) + 4000; // 4-7 segundos
+          console.log(`⏳ Esperando ${(delay / 1000).toFixed(1)}s antes del siguiente envío...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+      } catch (error) {
+        console.error(`❌ Error enviando a ${nombre} (${telefono}):`, error.message);
+        
+        results[id_modalservicio] = {
+          success: false,
+          error: error.message || 'Error desconocido'
+        };
+
+        failed++;
+
+        // Si hay error de conexión, detener el batch
+        if (error.message.includes('disconnected') || error.message.includes('not-authorized')) {
+          console.error(`🛑 Error crítico de conexión. Deteniendo batch.`);
+          
+          // Marcar los restantes como fallidos
+          for (let j = i + 1; j < recipients.length; j++) {
+            results[recipients[j].id_modalservicio] = {
+              success: false,
+              error: 'Batch detenido por error de conexión'
+            };
+            failed++;
+          }
+          
+          break;
+        }
+
+        // Continuar con el siguiente destinatario
+        // Pequeña pausa adicional después de un error
+        if (i < recipients.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+
+    console.log(`\n📊 [Campaña ${campania_id}] Chunk ${chunk_number} completado:`);
+    console.log(`   ✅ Exitosos: ${successful}`);
+    console.log(`   ❌ Fallidos: ${failed}`);
+
+    return {
+      campania_id,
+      chunk_number,
+      id_servicio,
+      total: recipients.length,
+      successful,
+      failed,
+      results
+    };
   },
 
   // Método para enviar mensajes simples (aceptación/rechazo)

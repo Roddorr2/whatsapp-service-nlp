@@ -658,3 +658,133 @@ export async function sendMessageReject(req, res) {
     });
   }
 }
+
+/**
+ * Enviar campaña en lotes (batch)
+ */
+export async function sendCampaignBatch(req, res) {
+  try {
+    const { 
+      campania_id,
+      chunk_number,
+      recipients, 
+      message,
+      id_servicio
+    } = req.body;
+
+    // Obtener imagen si fue subida o enviada como URL
+    let image_url = null;
+    if (req.file) {
+      image_url = `${BASE_URL}/public/imagenes_dashboard/${req.file.filename}`;
+    } else if (req.body.image_url) {
+      image_url = req.body.image_url;
+    }
+
+    console.log('Usuario ejecutando sendCampaignBatch:', req.user);
+
+    const result = await whatsappService.sendCampaignBatch({
+      campania_id,
+      chunk_number: chunk_number || 1,
+      recipients,
+      message,
+      image_url,
+      id_servicio
+    });
+
+    res.json({
+      success: true,
+      executedBy: {
+        userId: req.user?.userId || req.user?.id || null,
+        username: req.user?.username || null,
+        isSystemJob: !!req.user?.isSystemJob
+      },
+      ...result
+    });
+  } catch (error) {
+    console.error("❌ Error en sendCampaignBatch:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+/**
+ * Subir/guardar plantilla con imagen
+ */
+export async function saveTemplate(req, res) {
+  try {
+    const templateData = req.body;
+    let imageUrl = null;
+
+    if (req.file) {
+      imageUrl = `${BASE_URL}/public/imagenes_dashboard/${req.file.filename}`;
+    }
+
+    res.json({
+      success: true,
+      message: "Plantilla recibida",
+      data: {
+        ...templateData,
+        image: imageUrl
+      },
+      file: req.file ? {
+        filename: req.file.filename,
+        path: imageUrl,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      } : null
+    });
+  } catch (error) {
+    console.error("❌ Error en saveTemplate:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+/**
+ * Activar campaña
+ */
+export async function activateCampaign(req, res) {
+  try {
+    const { campaignId, name, recipients, templateOption, messageType, scheduledAt } = req.body;
+
+    // Aquí se puede agregar lógica para programar la campaña
+    // Por ahora solo confirmamos la activación
+
+    const createdBy = {
+      userId: req.user?.userId || req.user?.id || null,
+      username: req.user?.username || null,
+      isSystemJob: !!req.user?.isSystemJob
+    };
+
+    console.log('Campaña activada por:', createdBy);
+
+    res.json({
+      success: true,
+      message: "Campaña activada",
+      campaign: {
+        id: campaignId || `campaign_${Date.now()}`,
+        name: name || 'Sin nombre',
+        recipientCount: recipients?.length || 0,
+        templateOption,
+        messageType,
+        scheduledAt: scheduledAt || new Date().toISOString(),
+        status: 'activated',
+        activatedAt: new Date().toISOString(),
+        createdBy
+      }
+    });
+  } catch (error) {
+    console.error("❌ Error en activateCampaign:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
