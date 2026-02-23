@@ -4,11 +4,14 @@ import { AUTH_CONFIG } from './src/config/auth.config.js';
 import sessionManager from './src/services/session.manager.js';
 const logger = console;
 
-const PORT = process.env.PORT || 5111;
+const PORT = process.env.PORT || 3000;
 
 // Validar configuración de autenticación
 AUTH_CONFIG.validateConfig();
 
+if (!PORT) {
+  throw new Error("PORT no está definido");
+}
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Servidor WhatsApp corriendo en puerto ${PORT}`);
   
