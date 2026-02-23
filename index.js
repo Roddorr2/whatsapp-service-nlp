@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 5111;
 // Validar configuración de autenticación
 AUTH_CONFIG.validateConfig();
 
-server.listen(PORT, async () => {
+server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Servidor WhatsApp corriendo en puerto ${PORT}`);
   
   // Auto-refresh de sesión si está habilitado
