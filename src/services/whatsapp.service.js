@@ -545,7 +545,7 @@ async function createNewSession() {
       retryRequestDelayMs: config.connection?.retryRequestDelayMs || 1000,
       maxRetries: config.connection?.maxRetries || 5,
       emitOwnEvents: false,
-      shouldIgnoreJid: (jid) => jid.includes('@broadcast'),
+      shouldIgnoreJid: (jid) => typeof jid === 'string' && jid.includes('@broadcast'),
       patchMessageBeforeSending: (msg) => {
         if (msg.message) {
           msg.messageTimestamp = Date.now();
