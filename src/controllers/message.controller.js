@@ -664,13 +664,12 @@ export async function sendMessageReject(req, res) {
  */
 export async function sendCampaignBatch(req, res) {
   try {
-    const { 
-      campania_id,
-      chunk_number,
-      recipients, 
-      message,
-      id_servicio
-    } = req.body;
+    // Normalizar aliases de payload para compatibilidad
+    const campania_id = req.body.campania_id ?? req.body.campaign_id;
+    const chunk_number = req.body.chunk_number ?? req.body.chunk_id ?? 1;
+    const recipients = req.body.recipients || [];
+    const message = req.body.message ?? req.body.parrafo ?? req.body.text ?? '';
+    const id_servicio = req.body.id_servicio ?? req.body.idServicio ?? null;
 
     // Obtener imagen si fue subida o enviada como URL
     let image_url = null;
@@ -684,7 +683,7 @@ export async function sendCampaignBatch(req, res) {
 
     const result = await whatsappService.sendCampaignBatch({
       campania_id,
-      chunk_number: chunk_number || 1,
+      chunk_number,
       recipients,
       message,
       image_url,

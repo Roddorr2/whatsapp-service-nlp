@@ -22,7 +22,8 @@ import {
   validateSendMessage, 
   validateSendImage, 
   validateSendMessageAccept, 
-  validateSendMessageReject 
+  validateSendMessageReject,
+  validateSendCampaignBatch
 } from '../validators/message.validator.js';
 import { authenticateJWT, authenticateJWTorAPIKey, authorizeRoles, authorizeRole } from '../middlewares/auth.middleware.js';
 import { upload } from '../config/message.config.js';
@@ -66,6 +67,6 @@ router.post('/template', authenticateJWTorAPIKey, authorizeRoles(['marketing','a
 router.post('/activate', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), activateCampaign);
 
 // Enviar campaña en lotes (batch)
-router.post('/send-campaign-batch', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador','system']), upload.single('image'), sendCampaignBatch);
+router.post('/send-campaign-batch', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador','system']), upload.single('image'), validateSendCampaignBatch, sendCampaignBatch);
 
 export default router;

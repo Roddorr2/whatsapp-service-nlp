@@ -111,6 +111,48 @@ function handleIncomingMessage(userId, message) {
   return null; // Chatbot deshabilitado
 }
 
+// Notificar al backend (Laravel) vía webhook para monitoreo de campañas
+async function notifyBackendStatus(payload) {
+  const mainBackendUrl = process.env.MAIN_BACKEND_URL;
+  if (!mainBackendUrl) {
+    console.warn('MAIN_BACKEND_URL no configurado — se omite notificación al backend');
+    return;
+  }
+
+  const webhookUrl = `${mainBackendUrl.replace(/\/$/, '')}/api/whatsapp/webhook/status`;
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+  if (process.env.WEBHOOK_API_KEY) headers['X-API-Key'] = process.env.WEBHOOK_API_KEY;
+
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (resp.ok) {
+        console.log(`✅ Webhook enviado al backend (${webhookUrl})`);
+        return;
+      }
+
+      const text = await resp.text();
+      console.error(`⚠️ Webhook fallido (${resp.status}): ${text}`);
+    } catch (err) {
+      console.error('⚠️ Error enviando webhook al backend:', err.message || err);
+    }
+
+    // Backoff simple
+    const backoffMs = attempt * 2000;
+    await new Promise(r => setTimeout(r, backoffMs));
+  }
+
+  console.error('❌ No se pudo entregar el webhook al backend tras varios intentos');
+}
+
 
 
 export async function startWhatsAppBot() {
@@ -1594,6 +1636,35 @@ if (!imageBuffer) {
     console.log(`\n📊 [Campaña ${campania_id}] Chunk ${chunk_number} completado:`);
     console.log(`   ✅ Exitosos: ${successful}`);
     console.log(`   ❌ Fallidos: ${failed}`);
+
+    // Construir payload de resumen para notificar al backend (Laravel)
+    try {
+      const resultsArray = Object.keys(results).map(key => {
+        const r = results[key];
+        return {
+          id_modalservicio: isNaN(Number(key)) ? key : Number(key),
+          message_id: r.messageId || r.provider_message_id || null,
+          status: r.success ? 'sent' : 'failed',
+          error: r.error || null,
+          sentAt: r.sentAt || null
+        };
+      });
+
+      const webhookPayload = {
+        campania_id,
+        chunk_id: chunk_number,
+        total: recipients.length,
+        successful,
+        failed,
+        results: resultsArray,
+        status: failed === 0 ? 'completed' : (successful === 0 ? 'failed' : 'partial')
+      };
+
+      // Notificar de forma asíncrona, pero esperar su intento antes de retornar
+      await notifyBackendStatus(webhookPayload);
+    } catch (notifyErr) {
+      console.error('Error preparando/enviando webhook al backend:', notifyErr.message || notifyErr);
+    }
 
     return {
       campania_id,
