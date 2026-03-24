@@ -110,12 +110,35 @@ io.use(async (socket, next) => {
 io.on('connection', (socket) => {
   console.log('Cliente conectado:', socket.id, 'user:', socket.user?.userId);
 
-  // Emitir estado inicial QR al cliente autenticado
-  socket.emit('qr-status-update', whatsappService.getQRStatus());
+  // Emitir estado inicial QR al cliente autenticado después de que esté listo
+  const initialStatus = whatsappService.getQRStatus();
+  console.log('📤 Emitiendo estado inicial al cliente:', {
+    clientId: socket.id,
+    isConnected: initialStatus.isConnected,
+    hasSocket: initialStatus.connectionState?.hasSocket,
+    status: initialStatus.connectionState?.status
+  });
+  socket.emit('qr-status-update', initialStatus);
 
-  // Permitir obtener estado inicial QR
+  // Permitir obtener estado inicial QR bajo demanda
   socket.on('get-initial-status', () => {
-    socket.emit('qr-status-update', whatsappService.getQRStatus());
+    const status = whatsappService.getQRStatus();
+    console.log('📤 Cliente solicitó estado (get-initial-status):', {
+      clientId: socket.id,
+      isConnected: status.isConnected,
+      hasSocket: status.connectionState?.hasSocket
+    });
+    socket.emit('qr-status-update', status);
+  });
+
+  // Permitir que el cliente pida una sincronización de estado
+  socket.on('sync-status', () => {
+    const status = whatsappService.getQRStatus();
+    console.log('📤 Cliente solicitó sincronización:', {
+      clientId: socket.id,
+      isConnected: status.isConnected
+    });
+    socket.emit('qr-status-update', status);
   });
 
   socket.on('disconnect', () => {
@@ -125,6 +148,12 @@ io.on('connection', (socket) => {
 
 // Función para emitir actualizaciones del QR a todos los clientes
 export function emitQrStatusUpdate(status) {
+  console.log('📡 Emitiendo actualización de estado a todos los clientes:', {
+    isConnected: status.isConnected,
+    hasSocket: status.connectionState?.hasSocket,
+    status: status.connectionState?.status,
+    timestamp: status.lastUpdated
+  });
   io.emit('qr-status-update', status);
 }
 

@@ -1,4 +1,5 @@
 import whatsappService from "../services/whatsapp.service.js";
+import sessionManager from "../services/session.manager.js";
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
@@ -104,6 +105,49 @@ export function getStatus(req, res) {
     res.status(500).json({
       success: false,
       message: "Error obteniendo estado",
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+/**
+ * SIMPLE health check endpoint - just verify current state.
+ * Validates:
+ * 1. API key is valid (implicitly true if reached here via middleware)
+ * 2. WhatsApp socket is connected
+ * 3. Webhook callback machinery is operational
+ * 
+ * Returns 200 with current state (connected, webhooksOperational, apiKeyValid).
+ * The orchestrator decides what to do based on the state (e.g., call /start-connection if needed).
+ */
+export async function getHealthStatus(req, res) {
+  try {
+    // If we reached here, auth middleware validated the API key or JWT
+    const apiKeyValid = true;
+
+    // Current connection info
+    const connected = whatsappService.isConnected();
+    const qrStatus = whatsappService.getQRStatus();
+    const webhooksOperational = qrStatus.isConnected && qrStatus.connectionState?.status === 'connected';
+
+    console.log('🔍 Health check state:', { connected, webhooksOperational, apiKeyValid });
+
+    // Always return current state with 200
+    res.json({
+      success: true,
+      connected: connected,
+      webhooksOperational: webhooksOperational,
+      apiKeyValid: apiKeyValid,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("❌ Error en health check:", error);
+    res.status(503).json({
+      success: false,
+      connected: false,
+      webhooksOperational: false,
+      apiKeyValid: true,
       error: error.message,
       timestamp: new Date().toISOString(),
     });
@@ -665,7 +709,8 @@ export async function sendMessageReject(req, res) {
 export async function sendCampaignBatch(req, res) {
   try {
     // Normalizar aliases de payload para compatibilidad
-    const campania_id = req.body.campania_id ?? req.body.campaign_id;
+    const campania_id = req.body.campania_id ?? req.body.campaign_id ?? null;
+    const chunk_id = req.body.chunk_id ?? req.body.chunk_number ?? 1;
     const chunk_number = req.body.chunk_number ?? req.body.chunk_id ?? 1;
     const recipients = req.body.recipients || [];
     const message = req.body.message ?? req.body.parrafo ?? req.body.text ?? '';
@@ -675,14 +720,15 @@ export async function sendCampaignBatch(req, res) {
     let image_url = null;
     if (req.file) {
       image_url = `${BASE_URL}/public/imagenes_dashboard/${req.file.filename}`;
-    } else if (req.body.image_url) {
-      image_url = req.body.image_url;
+    } else if (req.body.image_url || req.body.imagen_url) {
+      image_url = req.body.image_url ?? req.body.imagen_url;
     }
 
     console.log('Usuario ejecutando sendCampaignBatch:', req.user);
 
     const result = await whatsappService.sendCampaignBatch({
       campania_id,
+      chunk_id,
       chunk_number,
       recipients,
       message,
@@ -701,11 +747,22 @@ export async function sendCampaignBatch(req, res) {
     });
   } catch (error) {
     console.error("❌ Error en sendCampaignBatch:", error);
-    res.status(500).json({
+    
+    // Usar código de estado del error si está disponible (503 para unavailable)
+    const statusCode = error.statusCode || 500;
+    const responseBody = {
       success: false,
       message: error.message,
       timestamp: new Date().toISOString()
-    });
+    };
+    
+    // Incluir información de estado si es 503 (servicio no disponible)
+    if (statusCode === 503 && error.currentState) {
+      responseBody.whatsappState = error.currentState;
+      responseBody.retryable = error.retryable || true;
+    }
+    
+    res.status(statusCode).json(responseBody);
   }
 }
 

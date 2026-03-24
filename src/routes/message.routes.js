@@ -1,6 +1,8 @@
 import {
   sendMessage,
   getStatus,
+  getHealthStatus,
+  startConnection,
   requestNewQr,
   forceExpireQr,
   getQrStatus,
@@ -40,7 +42,8 @@ router.post('/send-message-reject', validateSendMessageReject, sendMessageReject
 router.get('/sent-messages', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador','system']), getSentMessages);
 router.get('/qr-code', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), getQrCode);
 router.post('/send-image', validateSendImage, sendMessageWithImage);
-router.get('/status', authenticateJWT, getStatus);
+router.get('/status', authenticateJWTorAPIKey, getStatus);
+router.post('/health', authenticateJWTorAPIKey, authorizeRoles(['system', 'marketing', 'administrador']), getHealthStatus);  // STRICT health check: API key users (system) + manual users (marketing/admin)
 router.get('/qr-status', authenticateJWT, getQrStatus);
 router.get('/auth-status', authenticateJWT, checkAuthStatus);
 router.get('/reconnection-status', authenticateJWT, getReconnectionStatus);
@@ -48,6 +51,7 @@ router.post('/qr-request', authenticateJWTorAPIKey, authorizeRoles(['marketing',
 router.post('/qr-expire', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), forceExpireQr);
 router.post('/auth/reset', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), resetAuth);
 router.post('/force-reconnect', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), forceReconnect);
+router.post('/start-connection', authenticateJWTorAPIKey, authorizeRoles(['system','administrador']), startConnection);
 
 router.get('/templates', (req, res) => {
   res.json(templateList);

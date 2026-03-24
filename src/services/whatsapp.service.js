@@ -111,47 +111,47 @@ function handleIncomingMessage(userId, message) {
   return null; // Chatbot deshabilitado
 }
 
-// Notificar al backend (Laravel) vía webhook para monitoreo de campañas
-async function notifyBackendStatus(payload) {
-  const mainBackendUrl = process.env.MAIN_BACKEND_URL;
-  if (!mainBackendUrl) {
-    console.warn('MAIN_BACKEND_URL no configurado — se omite notificación al backend');
-    return;
-  }
+// // Notificar al backend (Laravel) vía webhook para monitoreo de campañas
+// async function notifyBackendStatus(payload) {
+//   const mainBackendUrl = process.env.MAIN_BACKEND_URL;
+//   if (!mainBackendUrl) {
+//     console.warn('MAIN_BACKEND_URL no configurado — se omite notificación al backend');
+//     return;
+//   }
 
-  const webhookUrl = `${mainBackendUrl.replace(/\/$/, '')}/api/whatsapp/webhook/status`;
-  const headers = {
-    'Content-Type': 'application/json'
-  };
-  if (process.env.WEBHOOK_API_KEY) headers['X-API-Key'] = process.env.WEBHOOK_API_KEY;
+//   const webhookUrl = `${mainBackendUrl.replace(/\/$/, '')}/api/whatsapp/webhook/status`;
+//   const headers = {
+//     'Content-Type': 'application/json'
+//   };
+//   if (process.env.WEBHOOK_API_KEY) headers['X-API-Key'] = process.env.WEBHOOK_API_KEY;
 
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
+//   const maxAttempts = 3;
+//   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+//     try {
+//       const resp = await fetch(webhookUrl, {
+//         method: 'POST',
+//         headers,
+//         body: JSON.stringify(payload)
+//       });
 
-      if (resp.ok) {
-        console.log(`✅ Webhook enviado al backend (${webhookUrl})`);
-        return;
-      }
+//       if (resp.ok) {
+//         console.log(`✅ Webhook enviado al backend (${webhookUrl})`);
+//         return;
+//       }
 
-      const text = await resp.text();
-      console.error(`⚠️ Webhook fallido (${resp.status}): ${text}`);
-    } catch (err) {
-      console.error('⚠️ Error enviando webhook al backend:', err.message || err);
-    }
+//       const text = await resp.text();
+//       console.error(`⚠️ Webhook fallido (${resp.status}): ${text}`);
+//     } catch (err) {
+//       console.error('⚠️ Error enviando webhook al backend:', err.message || err);
+//     }
 
-    // Backoff simple
-    const backoffMs = attempt * 2000;
-    await new Promise(r => setTimeout(r, backoffMs));
-  }
+//     // Backoff simple
+//     const backoffMs = attempt * 2000;
+//     await new Promise(r => setTimeout(r, backoffMs));
+//   }
 
-  console.error('❌ No se pudo entregar el webhook al backend tras varios intentos');
-}
+//   console.error('❌ No se pudo entregar el webhook al backend tras varios intentos');
+// }
 
 
 
@@ -626,9 +626,17 @@ async function createNewSession() {
           connectionState.isConnecting = false;
           connectionState.reconnectAttempts = 0;
           connectionState.isReconnecting = false;
-          logger.info('WhatsApp connected successfully');
+          logger.info('✅ WhatsApp connected successfully');
 
-          emitQrStatusUpdate(getQRStatus());
+          // Emitir estado actualizado inmediatamente
+          const currentStatus = getQRStatus();
+          console.log('📡 Emitiendo estado de conexión al frontend:', {
+            isConnected: currentStatus.isConnected,
+            hasSocket: currentStatus.connectionState.hasSocket,
+            status: currentStatus.connectionState.status,
+            timestamp: new Date().toISOString()
+          });
+          emitQrStatusUpdate(currentStatus);
         } else if (update.connection === 'close') {
           connectionState.connectionStatus = 'disconnected';
           connectionState.isConnecting = false;
@@ -815,6 +823,67 @@ async function getImageBase64(imgPath) {
   }
 }
 
+/**
+ * Envía un webhook por-recipient al backend Laravel
+ * Estrategia granular: un webhook individual por cada recipients con delay de 2-4 segundos
+ * @param {Object} webhookPayload - Datos del webhook (campania_id, chunk_id, id_modalservicio, status, etc)
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+async function notifyBackendStatus(webhookPayload) {
+  try {
+    const backendUrl = `${process.env.MAIN_BACKEND_URL || process.env.BACKEND_URL || 'http://localhost:8000'}/api/whatsapp/webhook/status`;
+    const apiKey = process.env.WHATSAPP_API_KEY || process.env.API_KEY;
+
+    if (!apiKey) {
+      console.warn('⚠️ API_KEY no configurada. Webhook no se enviará al backend.');
+      return {
+        success: false,
+        error: 'API_KEY no configurada en variables de entorno'
+      };
+    }
+
+    console.log(`\n🔔 Enviando webhook per-recipient a ${backendUrl}...`);
+    console.log(`   Destinatario: ${webhookPayload.recipient?.nombre || webhookPayload.id_modalservicio}`);
+    console.log(`   Estado: ${webhookPayload.status}`);
+
+    const response = await fetch(backendUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey
+      },
+      body: JSON.stringify(webhookPayload),
+      timeout: 10000 // 10s timeout
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const responseData = await response.json();
+    console.log(`✅ Webhook entregado exitosamente. IDs aceptados:`, responseData.event_ids || responseData.accepted);
+
+    return {
+      success: true,
+      message: 'Webhook enviado correctamente',
+      response: responseData
+    };
+  } catch (error) {
+    console.error(`❌ Error enviando webhook al backend:`, {
+      error: error.message,
+      recipient: webhookPayload?.recipient?.nombre || webhookPayload?.id_modalservicio,
+      status: webhookPayload?.status,
+      timestamp: new Date().toISOString()
+    });
+
+    // Retornar error pero no lanzar excepción para no interrumpir el flujo
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 // API Pública
 export default {
   async requestQR(userId) {
@@ -929,6 +998,10 @@ export default {
 
   getQRStatus() {
     return getQRStatus();
+  },
+
+  isConnected() {
+    return connectionState.connectionStatus === 'connected';
   },
 
   async sendMessage({ telefono, templateOption, nombre, fecha, hora, productoName }) {
@@ -1523,16 +1596,40 @@ if (!imageBuffer) {
    * @param {Object} params - Parámetros de la campaña
    * @returns {Promise<Object>} Resultado del envío
    */
-  async sendCampaignBatch({ campania_id, chunk_number, recipients, message, image_url, id_servicio }) {
+  async sendCampaignBatch({ campania_id, chunk_id, chunk_number, recipients, message, image_url, id_servicio }) {
     const results = {};
     let successful = 0;
     let failed = 0;
 
-    console.log(`\n🚀 [Campaña ${campania_id}] Iniciando chunk ${chunk_number} con ${recipients.length} destinatarios`);
+    const resolvedCampaignId = campania_id ?? null;
+    const resolvedChunkId = chunk_id ?? chunk_number ?? 1;
+    const resolvedChunkNumber = chunk_number ?? chunk_id ?? 1;
+
+    console.log(`\n🚀 [Campaña ${resolvedCampaignId}] Iniciando chunk id=${resolvedChunkId} (#${resolvedChunkNumber}) con ${recipients.length} destinatarios`);
     
-    // Verificar conexión
-    if (!connectionState.socket || connectionState.connectionStatus !== 'connected') {
-      throw new Error('WhatsApp no está conectado. Por favor, escanea el código QR.');
+    // Verificar conexión con contexto del estado actual
+    const currentStatus = connectionState.connectionStatus;
+    const hasSocket = !!connectionState.socket;
+    
+    if (currentStatus === 'connecting' || connectionState.isConnecting) {
+      const error = new Error('WhatsApp se está conectando. Por favor, intenta en unos segundos.');
+      error.code = 'SERVICE_UNAVAILABLE';
+      error.statusCode = 503;
+      error.retryable = true;
+      throw error;
+    }
+    
+    if (!hasSocket || currentStatus !== 'connected') {
+      const error = new Error(`WhatsApp no disponible (estado: ${currentStatus}). Escanea el código QR o reconecta.`);
+      error.code = 'SERVICE_UNAVAILABLE';
+      error.statusCode = 503;
+      error.currentState = {
+        status: currentStatus,
+        hasSocket: hasSocket,
+        isConnecting: connectionState.isConnecting,
+        isReconnecting: connectionState.isReconnecting
+      };
+      throw error;
     }
 
     // Descargar imagen una sola vez
@@ -1560,23 +1657,34 @@ if (!imageBuffer) {
       const { id_modalservicio, nombre, telefono } = recipient;
 
       try {
-        console.log(`\n📤 [${i + 1}/${recipients.length}] Enviando a ${nombre} (${telefono})...`);
+        // Normalizar y validar teléfono: eliminar caracteres no numéricos
+        const defaultCountry = process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '';
+        const rawPhone = String(telefono || '');
+        let cleanPhone = rawPhone.replace(/\D/g, '');
 
-        // Formatear teléfono (asegurar que tenga @s.whatsapp.net)
-        const formattedPhone = telefono.includes('@') 
-          ? telefono 
-          : `${telefono}@s.whatsapp.net`;
+        // Quitar ceros a la izquierda
+        cleanPhone = cleanPhone.replace(/^0+/, '');
+
+        // Si se proporcionó un country code por defecto y el número parece local, prepend
+        if (defaultCountry && !cleanPhone.startsWith(defaultCountry) && cleanPhone.length <= 10) {
+          cleanPhone = `${defaultCountry}${cleanPhone}`;
+        }
+
+        const formattedPhone = rawPhone.includes('@') ? rawPhone : `${cleanPhone}@s.whatsapp.net`;
+
+        const displayName = nombre || cleanPhone || id_modalservicio;
+        console.log(`\n📤 [${i + 1}/${recipients.length}] Enviando a ${displayName} (${cleanPhone})...`);
 
         // Preparar mensaje
         let messagePayload;
         if (imageBuffer) {
           messagePayload = {
             image: Buffer.from(imageBuffer),
-            caption: `Hola ${nombre}! 👋\n\n${message}`
+            caption: `👋\n\n${message}`
           };
         } else {
           messagePayload = {
-            text: `Hola ${nombre}! 👋\n\n${message}`
+            text: `👋\n\n${message}`
           };
         }
 
@@ -1590,13 +1698,37 @@ if (!imageBuffer) {
         };
 
         successful++;
-        console.log(`✅ Enviado exitosamente a ${nombre}`);
+        console.log(`✅ Enviado exitosamente a ${displayName}`);
 
-        // Rate limiting: Esperar entre 4-7 segundos entre mensajes
+        // Preparar y notificar al backend inmediatamente (fire-and-forget)
+        try {
+          const recipientWebhook = {
+            campania_id: resolvedCampaignId,
+            chunk_id: resolvedChunkId,
+            chunk_number: resolvedChunkNumber,
+            status: 'sent',
+            id_modalservicio: id_modalservicio,
+            message_id: result.key.id,
+            sentAt: results[id_modalservicio].sentAt,
+            recipient: {
+              nombre: displayName,
+              telefono: cleanPhone
+            }
+          };
+
+          // Fire-and-forget para no bloquear el loop de envíos
+          notifyBackendStatus(recipientWebhook)
+            .then(() => console.log(`🔔 Webhook entregado para ${displayName} (${cleanPhone})`))
+            .catch((webhookErr) => console.error(`⚠️ Error entregando webhook para ${nombre}:`, webhookErr.message));
+        } catch (webhookErr) {
+          console.error(`⚠️ Error preparando webhook para ${nombre}:`, webhookErr.message);
+        }
+
+        // Rate limiting: usar delay fijo de 4 segundos entre envíos
         if (i < recipients.length - 1) {
-          const delay = Math.floor(Math.random() * 3000) + 4000; // 4-7 segundos
-          console.log(`⏳ Esperando ${(delay / 1000).toFixed(1)}s antes del siguiente envío...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          const messageDelay = 4000; // 4 segundos
+          console.log(`⏳ Esperando ${(messageDelay / 1000).toFixed(1)}s antes del siguiente envío...`);
+          await new Promise(resolve => setTimeout(resolve, messageDelay));
         }
 
       } catch (error) {
@@ -1604,10 +1736,35 @@ if (!imageBuffer) {
         
         results[id_modalservicio] = {
           success: false,
-          error: error.message || 'Error desconocido'
+          error: error.message || 'Error desconocido',
+          sentAt: new Date().toISOString()
         };
 
         failed++;
+
+        // Notificar error al backend inmediatamente (fire-and-forget)
+        try {
+          const failureWebhook = {
+            campania_id: resolvedCampaignId,
+            chunk_id: resolvedChunkId,
+            chunk_number: resolvedChunkNumber,
+            status: 'failed',
+            id_modalservicio: id_modalservicio,
+            message_id: null,
+            error: error.message,
+            sentAt: results[id_modalservicio].sentAt,
+            recipient: {
+              nombre: nombre,
+              telefono: telefono
+            }
+          };
+
+          notifyBackendStatus(failureWebhook)
+            .then(() => console.log(`🔔 Webhook de error entregado para ${nombre}`))
+            .catch((webhookErr) => console.error(`⚠️ Error entregando webhook de error:`, webhookErr.message));
+        } catch (webhookErr) {
+          console.error(`⚠️ Error preparando webhook de error:`, webhookErr.message);
+        }
 
         // Si hay error de conexión, detener el batch
         if (error.message.includes('disconnected') || error.message.includes('not-authorized')) {
@@ -1617,7 +1774,8 @@ if (!imageBuffer) {
           for (let j = i + 1; j < recipients.length; j++) {
             results[recipients[j].id_modalservicio] = {
               success: false,
-              error: 'Batch detenido por error de conexión'
+              error: 'Batch detenido por error de conexión',
+              sentAt: new Date().toISOString()
             };
             failed++;
           }
@@ -1633,47 +1791,23 @@ if (!imageBuffer) {
       }
     }
 
-    console.log(`\n📊 [Campaña ${campania_id}] Chunk ${chunk_number} completado:`);
+    console.log(`\n📊 [Campaña ${resolvedCampaignId}] Chunk id=${resolvedChunkId} (#${resolvedChunkNumber}) completado:`);
     console.log(`   ✅ Exitosos: ${successful}`);
     console.log(`   ❌ Fallidos: ${failed}`);
+    console.log(`   📢 Webhooks per-recipient despachados con delays de 2-4 segundos`);
 
-    // Construir payload de resumen para notificar al backend (Laravel)
-    try {
-      const resultsArray = Object.keys(results).map(key => {
-        const r = results[key];
-        return {
-          id_modalservicio: isNaN(Number(key)) ? key : Number(key),
-          message_id: r.messageId || r.provider_message_id || null,
-          status: r.success ? 'sent' : 'failed',
-          error: r.error || null,
-          sentAt: r.sentAt || null
-        };
-      });
-
-      const webhookPayload = {
-        campania_id,
-        chunk_id: chunk_number,
-        total: recipients.length,
-        successful,
-        failed,
-        results: resultsArray,
-        status: failed === 0 ? 'completed' : (successful === 0 ? 'failed' : 'partial')
-      };
-
-      // Notificar de forma asíncrona, pero esperar su intento antes de retornar
-      await notifyBackendStatus(webhookPayload);
-    } catch (notifyErr) {
-      console.error('Error preparando/enviando webhook al backend:', notifyErr.message || notifyErr);
-    }
-
+    // Retornar resultado sin esperar webhooks (se envían de forma asíncrona)
     return {
-      campania_id,
-      chunk_number,
+      campania_id: resolvedCampaignId,
+      chunk_id: resolvedChunkId,
+      chunk_number: resolvedChunkNumber,
       id_servicio,
       total: recipients.length,
       successful,
       failed,
-      results
+      results,
+      webhookStrategy: 'per-recipient-granular',
+      note: 'Webhooks per-recipient se envían de forma asíncrona con delays de 2-4 segundos'
     };
   },
 
@@ -1782,6 +1916,102 @@ if (!imageBuffer) {
     }
   },
 
+  /**
+   * Espera hasta que WhatsApp esté conectado o timeout
+   * @param {number} timeoutMs - Timeout en ms (default 60s)
+   * @returns {Promise<{success: boolean, connected: boolean, elapsedMs: number, message: string}>}
+   */
+  async waitForConnection(timeoutMs = 60000) {
+    const startTime = Date.now();
+    const pollInterval = 500; // Poll cada 500ms
+
+    return new Promise((resolve) => {
+      const pollConnection = () => {
+        if (connectionState.connectionStatus === 'connected') {
+          resolve({
+            success: true,
+            connected: true,
+            elapsedMs: Date.now() - startTime,
+            message: 'WhatsApp conectado exitosamente'
+          });
+          return;
+        }
+
+        const elapsed = Date.now() - startTime;
+        if (elapsed >= timeoutMs) {
+          resolve({
+            success: false,
+            connected: false,
+            elapsedMs: elapsed,
+            message: `Timeout esperando conexión (${(elapsed / 1000).toFixed(1)}s)`,
+            currentStatus: connectionState.connectionStatus
+          });
+          return;
+        }
+
+        // Continuar esperando
+        setTimeout(pollConnection, pollInterval);
+      };
+
+      // Iniciar polling
+      pollConnection();
+    });
+  },
+
+  /**
+   * Intenta iniciar la conexión de WhatsApp usando las credenciales existentes.
+   * - Si ya está conectado, retorna success=true y alreadyConnected=true
+   * - Si no hay credenciales válidas, retorna success=false con mensaje
+   * - Intenta crear una nueva sesión llamando a createNewSession()
+   */
+  async startConnection(timeoutMs = 30000) {
+    try {
+      if (connectionState.connectionStatus === 'connected' && connectionState.socket) {
+        return { success: true, message: 'Ya conectado', alreadyConnected: true };
+      }
+
+      // Validar credenciales disponibles
+      const validation = await sessionManager.validateCredentials();
+      if (!validation.valid) {
+        return { success: false, message: 'No hay credenciales válidas en auth_info', error: validation.reason || 'no_credentials' };
+      }
+
+      // Marcar estado y limpiar conexión previa
+      connectionState.isConnecting = true;
+      connectionState.connectionStatus = 'connecting';
+
+      try {
+        await cleanupConnection();
+      } catch (cleanupErr) {
+        console.warn('Advertencia al limpiar conexión previa antes de startConnection', { error: cleanupErr.message });
+      }
+
+      // Intentar crear nueva sesión inmediatamente
+      try {
+        connectionState.socket = await createNewSession();
+
+        // Esperar hasta connected o timeout
+        const waitResult = await this.waitForConnection(timeoutMs).catch(() => null);
+
+        // Actualizar estado final
+        const finalStatus = connectionState.connectionStatus === 'connected';
+        return {
+          success: finalStatus,
+          message: finalStatus ? 'Conexión establecida' : 'Sesión creada pero no se alcanzó estado connected dentro del timeout',
+          alreadyConnected: false,
+          connected: finalStatus
+        };
+      } catch (sessionErr) {
+        connectionState.isConnecting = false;
+        connectionState.connectionStatus = 'disconnected';
+        console.error('Error creando nueva sesión en startConnection', { error: sessionErr.message });
+        return { success: false, message: 'Error al crear nueva sesión', error: sessionErr.message };
+      }
+    } catch (err) {
+      console.error('Error en startConnection:', { error: err.message });
+      return { success: false, message: 'Error interno', error: err.message };
+    }
+  },
 
  
 };

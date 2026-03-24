@@ -208,6 +208,8 @@ export const validateSendCampaignBatch = [
   body('chunk_id').optional().isInt({ min: 1 }).withMessage('chunk_id debe ser entero positivo'),
   body('message').optional().isString(),
   body('parrafo').optional().isString(),
+  body('image_url').optional().isString(),
+  body('imagen_url').optional().isString(),
   (req, res, next) => {
     const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || '20', 10);
     const errors = validationResult(req);

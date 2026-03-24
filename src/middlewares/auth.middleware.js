@@ -57,18 +57,22 @@ export async function authenticateJWT(req, res, next) {
 }
 
 // Middleware combinado: primero intenta JWT, si no viene JWT intenta API Key
+// ESTÁNDAR: Header 'x-api-key' (case-insensitive en HTTP, normalizado a lowercase en Express)
+// Valor esperado: process.env.API_KEY (deve coincidir con WHATSAPP_SERVICE_API_KEY en Laravel)
 export async function authenticateJWTorAPIKey(req, res, next) {
   const authHeader = req.headers.authorization;
-  const apiKey = req.headers['x-api-key'];
+  const apiKey = req.headers['x-api-key']; // Header estándar para API Key (Express normaliza a lowercase)
 
   // Prioridad JWT
   if (authHeader) {
     return authenticateJWT(req, res, next);
   }
 
-  // Fallback API Key
+  // Fallback API Key (validar contra variable de entorno API_KEY)
   if (apiKey) {
+    // Validar que la API Key coincida con la variable de entorno
     if (!process.env.API_KEY || apiKey !== process.env.API_KEY) {
+      console.warn(`[AUTH] API Key validation failed. Expected: ${process.env.API_KEY}, Got: ${apiKey}`);
       return res.status(401).json({ success: false, message: 'API Key inválida' });
     }
     req.user = {
