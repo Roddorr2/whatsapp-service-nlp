@@ -123,6 +123,9 @@ Su efecto dorado 3D proyecta exclusividad, durabilidad y sofisticación, diferen
     }
   },
 
+
+
+  
   {
     id: 6,
     name: "IMPRESIÓN DE VINILO",
