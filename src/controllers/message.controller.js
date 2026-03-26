@@ -1,10 +1,11 @@
-import whatsappService from "../services/whatsapp.service.js";
+import whatsappService, { getImageBase64, notifyBackendStatus } from "../services/whatsapp.service.js";
 import sessionManager from "../services/session.manager.js";
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { BASE_URL } from "../config/index.js";
 import { getTemplate } from "../templates.js";
+import { interpolateMessage } from "../utils/messageUtils.js";
 
 
 
@@ -64,32 +65,97 @@ export async function sendMessage(req, res) {
 
 export async function sendMessageWithImageDashboard(req, res) {
   try {
-    const { nombre, templateOption, messageType, telefono } = req.body;
-    const plantilla = getTemplate(templateOption, messageType, { nombre });
+    // ✅ NUEVO PAYLOAD - Modal WAT desde Laravel
+    const {
+      telefono,
+      nombre,
+      mensaje,           // ← Texto directo del payload (puede tener {nombre})
+      image_url,         // ← URL de imagen (puede ser null)
+      fecha,
+      hora,
+      productoName,
+      id_modal_wat,      // ← Identificador de Modal WAT
+      id_plantilla_whatsapp,  // ← ID de plantilla WhatsApp
+      id_modalservicio
+    } = req.body;
 
-    let imageToSend;
-
-    if (req.file) {
-      
-      imageToSend = `${BASE_URL}/public/imagenes_dashboard/${req.file.filename}`;
-    } else if (plantilla.image) {
-      
-      imageToSend = `${BASE_URL}/public/${plantilla.image}`; 
+    // Validaciones básicas
+    if (!telefono || !nombre || !mensaje) {
+      return res.status(400).json({
+        success: false,
+        message: "Faltan campos obligatorios: telefono, nombre, mensaje",
+      });
     }
 
-    console.log("Ruta final enviada al service:", imageToSend);
+    // Interpolar nombre si existe {nombre} en el texto
+    const textoInterpolado = interpolateMessage(mensaje, nombre);
 
+    // Descargar imagen si existe URL (sin delays)
+    let imageBuffer = null;
+    if (image_url) {
+      try {
+        console.log(`📥 Descargando imagen desde: ${image_url}`);
+        imageBuffer = await getImageBase64(image_url);
+        if (imageBuffer) {
+          console.log(`✅ Imagen descargada exitosamente. Tamaño: ${imageBuffer.length} bytes, Tipo: ${typeof imageBuffer}, IsBuffer: ${Buffer.isBuffer(imageBuffer)}`);
+        } else {
+          console.warn("⚠️ No se pudo descargar imagen desde:", image_url);
+        }
+      } catch (imgError) {
+        console.warn("⚠️ Error descargando imagen:", imgError.message);
+        // Continuar sin imagen si falla la descarga
+      }
+    }
+
+    console.log("Modal WAT - Enviando mensaje:", {
+      telefono,
+      nombre,
+      id_modal_wat,
+      textoPreview: textoInterpolado.substring(0, 50),
+      tieneImagen: !!imageBuffer,
+      imagenTamaño: imageBuffer ? `${imageBuffer.length}B` : 'null'
+    });
+
+    // Enviar al servicio de WhatsApp
     const result = await whatsappService.sendMessageImageDashboard({
       telefono,
       nombre,
-      image: imageToSend, 
-      text: plantilla.text,
-      templateOption
+      image: imageBuffer,
+      text: textoInterpolado,
+      id_modal_wat,
+      id_modalservicio
     });
 
-    res.json({ success: true, ...result });
+    // Preparar y enviar webhook al backend (fire-and-forget)
+    if (result.success && result.messageId) {
+      try {
+        const webhookPayload = {
+          provider_message_id: result.messageId,
+          status: 'sent',
+          id_modal_wat: id_modal_wat,
+          sentAt: new Date().toISOString()
+        };
+
+        // Fire-and-forget para no bloquear la respuesta al cliente
+        notifyBackendStatus(webhookPayload)
+          .then(() => console.log(`🔔 Webhook Modal WAT entregado para ${nombre}`))
+          .catch((webhookErr) => console.error(`⚠️ Error entregando webhook Modal WAT para ${nombre}:`, webhookErr.message));
+      } catch (webhookErr) {
+        console.error("⚠️ Error preparando webhook Modal WAT:", webhookErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      id_modal_wat,
+      ...result
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error("❌ Error en sendMessageWithImageDashboard:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 }
 
@@ -590,12 +656,12 @@ export async function sendMessageWithImage(req, res) {
       });
     }
 
-    // Validar formato del teléfono
-    const cleanPhone = phone.replace(/\D/g, '');
-    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+    // Validar formato del teléfono (aceptar 9-15 dígitos; el service completará el prefijo si hace falta)
+    const cleanPhone = phone ? String(phone).replace(/\D/g, '').replace(/^0+/, '') : '';
+    if (cleanPhone.length < 9 || cleanPhone.length > 15) {
       return res.status(400).json({
         success: false,
-        message: "El número de teléfono debe tener entre 10 y 15 dígitos",
+        message: "El número de teléfono debe tener entre 9 y 15 dígitos",
       });
     }
 
