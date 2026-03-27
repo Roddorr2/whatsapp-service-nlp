@@ -22,7 +22,7 @@ RUN npm ci --omit=dev
 COPY . .
 
 # Expone el puerto
-EXPOSE 5111
+EXPOSE 5112
 
 # Usa tini como init process
 ENTRYPOINT ["/sbin/tini", "--"]
