@@ -1734,11 +1734,11 @@ export default {
         if (imageBuffer) {
           messagePayload = {
             image: Buffer.from(imageBuffer),
-            caption: `👋\n\n${textoInterpolado}`
+            caption: `${textoInterpolado}`
           };
         } else {
           messagePayload = {
-            text: `👋\n\n${textoInterpolado}`
+            text: `${textoInterpolado}`
           };
         }
 
