@@ -1013,7 +1013,7 @@ export default {
       formattedPhone = rawPhone; // ya es JID
     } else {
       let cleanPhone = rawPhone.replace(/\D/g, '').replace(/^0+/, '');
-      const defaultCountry = (process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '').replace(/['"]/g, '');
+      const defaultCountry = (process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '51').replace(/['"]/g, '');
       if (defaultCountry && !cleanPhone.startsWith(defaultCountry) && cleanPhone.length <= 10) {
         cleanPhone = `${defaultCountry}${cleanPhone}`;
       }
