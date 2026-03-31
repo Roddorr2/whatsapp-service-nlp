@@ -1,5 +1,4 @@
 import {
-  sendMessage,
   getStatus,
   getHealthStatus,
   startConnection,
@@ -16,9 +15,7 @@ import {
   sendMessageAccept,
   sendMessageReject,
   sendMessageWithImageDashboard,
-  sendCampaignBatch,
-  saveTemplate,
-  activateCampaign
+  sendCampaignBatch
 } from '../controllers/message.controller.js';
 import { 
   validateSendMessage, 
@@ -30,11 +27,10 @@ import {
 import { authenticateJWT, authenticateJWTorAPIKey, authorizeRoles, authorizeRole } from '../middlewares/auth.middleware.js';
 import { upload } from '../config/message.config.js';
 import { Router } from 'express';
-import { templateList } from '../templates.js'
 const router = Router();
 
-// router.post('/send-message', authenticateJWT, authorizeRole('admin'), validateSendMessage, sendMessage);
-router.post('/send-message', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador','system']), validateSendMessage, sendMessage);
+// [DEPRECATED] Este endpoint está deprecado. Usar /send-message-image en su lugar
+// router.post('/send-message', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador','system']), validateSendMessage, sendMessage);
 router.post('/send-message-image', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador','system']), upload.single("image"), sendMessageWithImageDashboard);
 
 router.post('/send-message-accept', validateSendMessageAccept, sendMessageAccept);
@@ -53,9 +49,10 @@ router.post('/auth/reset', authenticateJWTorAPIKey, authorizeRoles(['marketing',
 router.post('/force-reconnect', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), forceReconnect);
 router.post('/start-connection', authenticateJWTorAPIKey, authorizeRoles(['system','administrador']), startConnection);
 
-router.get('/templates', (req, res) => {
-  res.json(templateList);
-});
+// [DEPRECATED] Endpoint de templates eliminado - templates.js ya no existe
+// router.get('/templates', (req, res) => {
+//   res.json(templateList);
+// });
 
 // ===============================
 // Nuevas rutas para el frontend
@@ -64,11 +61,11 @@ router.get('/templates', (req, res) => {
 // Reiniciar/Solicitar nuevo QR
 router.post('/restart', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), requestNewQr);
 
-// Subir/guardar plantilla con imagen
-router.post('/template', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), upload.single('image'), saveTemplate);
+// [DEPRECATED] Endpoint de templates eliminado
+// router.post('/template', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), upload.single('image'), saveTemplate);
 
-// Activar campaña
-router.post('/activate', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), activateCampaign);
+// [DEPRECATED] Endpoint de activación de campaña eliminado
+// router.post('/activate', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador']), activateCampaign);
 
 // Enviar campaña en lotes (batch)
 router.post('/send-campaign-batch', authenticateJWTorAPIKey, authorizeRoles(['marketing','administrador','system']), upload.single('image'), validateSendCampaignBatch, sendCampaignBatch);

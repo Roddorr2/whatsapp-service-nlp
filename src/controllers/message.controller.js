@@ -4,13 +4,16 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { BASE_URL } from "../config/index.js";
-import { getTemplate } from "../templates.js";
 import { interpolateMessage } from "../utils/messageUtils.js";
 
 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+/*
+[DEPRECATED] - Esta función usa templates.js que ha sido eliminado.
+Usar /send-message-image (/sendMessageWithImageDashboard) en su lugar.
 
 export async function sendMessage(req, res) {
   try {
@@ -61,6 +64,7 @@ export async function sendMessage(req, res) {
     });
   }
 }
+*/
 
 
 export async function sendMessageWithImageDashboard(req, res) {
@@ -832,6 +836,9 @@ export async function sendCampaignBatch(req, res) {
   }
 }
 
+/*
+[DEPRECATED] - templates.js ha sido eliminado
+
 /**
  * Subir/guardar plantilla con imagen
  */
@@ -868,9 +875,12 @@ export async function saveTemplate(req, res) {
   }
 }
 
-/**
- * Activar campaña
- */
+
+/*
+[DEPRECATED] - templates.js ha sido eliminado. Usar /send-campaign-batch (/sendCampaignBatch) en su lugar.
+
+Activar campaña
+
 export async function activateCampaign(req, res) {
   try {
     const { campaignId, name, recipients, templateOption, messageType, scheduledAt } = req.body;
@@ -910,3 +920,4 @@ export async function activateCampaign(req, res) {
     });
   }
 }
+*/
