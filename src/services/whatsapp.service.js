@@ -1,6 +1,5 @@
 import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
-import { getTemplate, getTemplateMessage } from '../templates.js';
 import { interpolateMessage } from '../utils/messageUtils.js';
 import whatsappSessionLogger from '../utils/whatsappSessionLogger.js';
 // Use console as fallback logger to avoid the custom logger dependency
@@ -1023,14 +1022,15 @@ export default {
       var formattedPhone = `${cleanPhone}@s.whatsapp.net`;
     }
 
+    // [DEPRECATED] plantillas eliminadas - código comentado
     // 🔹 Obtiene la plantilla (objeto con text + image)
-    const plantilla = getTemplate(productoName, templateOption, { nombre});
-
-    if (!plantilla || !plantilla.text) {
-      throw new Error("Plantilla de mensaje no válida");
-    }
-
-    let messagePayload = { text: plantilla.text };
+    // const plantilla = getTemplate(productoName, templateOption, { nombre});
+    
+    // if (!plantilla || !plantilla.text) {
+    //   throw new Error("Plantilla de mensaje no válida");
+    // }
+    
+    // let messagePayload = { text: plantilla.text };
 
     // Si la plantilla tiene imagen, descargarla localmente como buffer
     if (plantilla.image) {
@@ -1734,11 +1734,11 @@ export default {
         if (imageBuffer) {
           messagePayload = {
             image: Buffer.from(imageBuffer),
-            caption: `👋\n\n${textoInterpolado}`
+            caption: `${textoInterpolado}`
           };
         } else {
           messagePayload = {
-            text: `👋\n\n${textoInterpolado}`
+            text: `${textoInterpolado}`
           };
         }
 
@@ -1876,19 +1876,20 @@ export default {
       formattedPhone = `${cleanPhone}@s.whatsapp.net`;
     }
 
-    // Importar las funciones de template
-    const { getAcceptanceTemplate, getRejectionTemplate } = await import('../templates.js');
+    // [DEPRECATED] Importación de templates eliminada - ya no se usan plantillas
+    // const { getAcceptanceTemplate, getRejectionTemplate } = await import('../templates.js');
     
     let finalMessage = message;
     
+    // [DEPRECATED] Lógica de template comentada - useTemplate ya no tiene efecto
     // Si se debe usar template, aplicar el correspondiente según el tipo
-    if (useTemplate) {
-      if (type === 'accept') {
-        finalMessage = getAcceptanceTemplate(message);
-      } else if (type === 'reject') {
-        finalMessage = getRejectionTemplate(message);
-      }
-    }
+    // if (useTemplate) {
+    //   if (type === 'accept') {
+    //     finalMessage = getAcceptanceTemplate(message);
+    //   } else if (type === 'reject') {
+    //     finalMessage = getRejectionTemplate(message);
+    //   }
+    // }
 
     try {
       logger.info('Enviando mensaje simple WhatsApp', {
