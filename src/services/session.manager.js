@@ -17,6 +17,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { clearAuthContent } from '../triggers/clearAuthTrigger.js';
 // logger removed: using console for logging to keep dependency minimal
 import dotenv from 'dotenv';
 import https from 'https';
@@ -692,18 +693,9 @@ class SessionManager {
       // (conservar la carpeta `auth_info` en sí misma).
       console.warn('🧹 AUTO CLEAN: Limpiando contenido de auth_info por fallo de autenticación', { authPath });
       try {
-        const entries = fs.readdirSync(authPath, { withFileTypes: true });
-
-        for (const entry of entries) {
-          const target = path.join(authPath, entry.name);
-            try {
-            fs.rmSync(target, { recursive: true, force: true });
-          } catch (entryErr) {
-            console.warn('⚠️ No se pudo eliminar entrada dentro de auth_info', { path: target, error: entryErr.message });
-          }
-        }
-
-        console.info('✅ auth_info limpiado correctamente (contenido eliminado)');
+        // Reuse centralized trigger to clear auth content
+        clearAuthContent();
+        console.info('✅ auth_info limpiado correctamente vía clearAuthContent()');
         return { cleaned: true, reason: 'cleaned_by_auto' };
       } catch (rmErr) {
         console.error('❌ Error limpiando auth_info en auto-clean', { error: rmErr.message });

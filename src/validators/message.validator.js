@@ -183,3 +183,50 @@ export const validateSendMessageReject = [
     next();
   }
 ];
+
+export const validateSendCampaignBatch = [
+  // Accept either campania_id or campaign_id
+  body().custom((value, { req }) => {
+    const hasCampania = req.body.campania_id !== undefined || req.body.campaign_id !== undefined;
+    const hasRecipients = Array.isArray(req.body.recipients) && req.body.recipients.length > 0;
+    if (!hasCampania) {
+      throw new Error('Se requiere campania_id o campaign_id');
+    }
+    if (!hasRecipients) {
+      throw new Error('Se requiere recipients como array no vacío');
+    }
+    return true;
+  }),
+  body('recipients').isArray({ min: 1 }).withMessage('recipients debe ser un array con al menos un elemento'),
+  body('recipients.*.id_modalservicio').exists().withMessage('id_modalservicio es obligatorio por destinatario'),
+  body('recipients.*.telefono')
+    .exists()
+    .withMessage('telefono es obligatorio por destinatario')
+    .matches(/^[\d\+\s\-\(\)]+$/)
+    .withMessage('telefono contiene caracteres inválidos'),
+  body('chunk_number').optional().isInt({ min: 1 }).withMessage('chunk_number debe ser entero positivo'),
+  body('chunk_id').optional().isInt({ min: 1 }).withMessage('chunk_id debe ser entero positivo'),
+  body('message').optional().isString(),
+  body('parrafo').optional().isString(),
+  body('image_url').optional().isString(),
+  body('imagen_url').optional().isString(),
+  (req, res, next) => {
+    const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || '20', 10);
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Errores de validación',
+        errors: errors.array().map(error => ({
+          field: error.path,
+          message: error.msg,
+          value: error.value
+        }))
+      });
+    }
+    if (Array.isArray(req.body.recipients) && req.body.recipients.length > CHUNK_SIZE) {
+      return res.status(400).json({ success: false, message: `recipients excede CHUNK_SIZE (${CHUNK_SIZE})` });
+    }
+    next();
+  }
+];

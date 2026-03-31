@@ -4,7 +4,7 @@ import { AUTH_CONFIG } from './src/config/auth.config.js';
 import sessionManager from './src/services/session.manager.js';
 const logger = console;
 
-const PORT = process.env.PORT || 5111;
+const PORT = process.env.PORT;
 
 // Validar configuración de autenticación
 AUTH_CONFIG.validateConfig();
