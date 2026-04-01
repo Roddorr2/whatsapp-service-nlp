@@ -1,4 +1,5 @@
 import whatsappService, { getImageBase64, notifyBackendStatus } from "../services/whatsapp.service.js";
+import { normalizePhone } from "../utils/normalizePhone.js";
 import sessionManager from "../services/session.manager.js";
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -660,12 +661,13 @@ export async function sendMessageWithImage(req, res) {
       });
     }
 
-    // Validar formato del teléfono (aceptar 9-15 dígitos; el service completará el prefijo si hace falta)
-    const cleanPhone = phone ? String(phone).replace(/\D/g, '').replace(/^0+/, '') : '';
-    if (cleanPhone.length < 9 || cleanPhone.length > 15) {
+    // Validar formato del teléfono usando normalizador central
+    try {
+      normalizePhone(phone);
+    } catch (err) {
       return res.status(400).json({
         success: false,
-        message: "El número de teléfono debe tener entre 9 y 15 dígitos",
+        message: err.message || "El número de teléfono no es válido",
       });
     }
 

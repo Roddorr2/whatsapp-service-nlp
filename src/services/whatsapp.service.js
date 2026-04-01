@@ -1,6 +1,7 @@
 import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { interpolateMessage } from '../utils/messageUtils.js';
+import { normalizePhone } from '../utils/normalizePhone.js';
 import whatsappSessionLogger from '../utils/whatsappSessionLogger.js';
 // Use console as fallback logger to avoid the custom logger dependency
 const logger = console;
@@ -268,7 +269,7 @@ async function generateQRFromUpdate(qrString) {
 
     connectionState.qrData = {
       image: qrResult.image,
-      expiresAt: Date.now() + (100 * 365 * 24 * 60 * 60 * 1000), // permanente (~100 años)
+      expiresAt: Date.now() + 120000, // 2 minutos
       createdAt: new Date().toISOString(),
       qrString: qrString,
       format: qrResult.format,
@@ -323,7 +324,7 @@ async function generateNewQR(session) {
                 try {
                   connectionState.qrData = {
                     image: qrResult.image,
-                    expiresAt: Date.now() + (100 * 365 * 24 * 60 * 60 * 1000), // permanente (~100 años)
+                    expiresAt: Date.now() + 120000, // 2 minutos
                     createdAt: new Date().toISOString(),
                     qrString: update.qr,
                     format: qrResult.format,
@@ -818,6 +819,9 @@ export async function getImageBase64(imgPath) {
   }
 }
 
+// Re-export normalizePhone from utils
+export { normalizePhone } from '../utils/normalizePhone.js';
+
 /**
  * Envía un webhook por-recipient al backend Laravel
  * Estrategia granular: un webhook individual por cada recipients con delay de 2-4 segundos
@@ -1008,19 +1012,8 @@ export default {
     // Normalizar y aceptar números locales (ej. 9 dígitos). Prepend DEFAULT_COUNTRY_CODE si falta.
     let rawPhone = telefono;
     if (typeof rawPhone !== 'string') rawPhone = String(rawPhone || '');
-    if (rawPhone.includes('@')) {
-      formattedPhone = rawPhone; // ya es JID
-    } else {
-      let cleanPhone = rawPhone.replace(/\D/g, '').replace(/^0+/, '');
-      const defaultCountry = (process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '').replace(/['"]/g, '');
-      if (defaultCountry && !cleanPhone.startsWith(defaultCountry) && cleanPhone.length <= 10) {
-        cleanPhone = `${defaultCountry}${cleanPhone}`;
-      }
-      if (cleanPhone.length < 9 || cleanPhone.length > 15) {
-        throw new Error('El número de teléfono debe tener entre 9 y 15 dígitos');
-      }
-      var formattedPhone = `${cleanPhone}@s.whatsapp.net`;
-    }
+    // Use centralized normalizer
+    var formattedPhone = normalizePhone(rawPhone);
 
     // [DEPRECATED] plantillas eliminadas - código comentado
     // 🔹 Obtiene la plantilla (objeto con text + image)
@@ -1141,23 +1134,8 @@ export default {
   /* =========================
      1️⃣ VALIDAR TELÉFONO
   ========================= */
-  // Normalizar y aceptar números locales (ej. 9 dígitos). Prepend DEFAULT_COUNTRY_CODE si falta.
-  let rawPhone = telefono;
-  if (typeof rawPhone !== 'string') rawPhone = String(rawPhone || '');
-  let formattedPhone;
-  if (rawPhone.includes('@')) {
-    formattedPhone = rawPhone;
-  } else {
-    let cleanPhone = rawPhone.replace(/\D/g, '').replace(/^0+/, '');
-    const defaultCountry = (process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '').replace(/['"]/g, '');
-    if (defaultCountry && !cleanPhone.startsWith(defaultCountry) && cleanPhone.length <= 10) {
-      cleanPhone = `${defaultCountry}${cleanPhone}`;
-    }
-    if (cleanPhone.length < 9 || cleanPhone.length > 15) {
-      throw new Error('El número debe tener entre 9 y 15 dígitos');
-    }
-    formattedPhone = `${cleanPhone}@s.whatsapp.net`;
-  }
+  // Use centralized normalizer
+  const formattedPhone = normalizePhone(telefono);
 
   /* =========================
      2️⃣ OBTENER IMAGEN REAL
@@ -1252,22 +1230,8 @@ export default {
     }
 
     // Normalizar y aceptar números locales (ej. 9 dígitos). Prepend DEFAULT_COUNTRY_CODE si falta.
-    let rawPhone = phone;
-    if (typeof rawPhone !== 'string') rawPhone = String(rawPhone || '');
-    let formattedPhone;
-    if (rawPhone.includes('@')) {
-      formattedPhone = rawPhone;
-    } else {
-      let cleanPhone = rawPhone.replace(/\D/g, '').replace(/^0+/, '');
-      const defaultCountry = (process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '').replace(/['"]/g, '');
-      if (defaultCountry && !cleanPhone.startsWith(defaultCountry) && cleanPhone.length <= 10) {
-        cleanPhone = `${defaultCountry}${cleanPhone}`;
-      }
-      if (cleanPhone.length < 9 || cleanPhone.length > 15) {
-        throw new Error('El número de teléfono debe tener entre 9 y 15 dígitos');
-      }
-      formattedPhone = `${cleanPhone}@s.whatsapp.net`;
-    }
+    // Centralized normalizer
+    const formattedPhone = normalizePhone(phone);
 
     // Validar datos de imagen
     if (!imageData) {
@@ -1708,23 +1672,10 @@ export default {
       const { id_modalservicio, nombre, telefono } = recipient;
 
       try {
-        // Normalizar y validar teléfono: eliminar caracteres no numéricos
-        const defaultCountry = process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '';
-        const rawPhone = String(telefono || '');
-        let cleanPhone = rawPhone.replace(/\D/g, '');
-
-        // Quitar ceros a la izquierda
-        cleanPhone = cleanPhone.replace(/^0+/, '');
-
-        // Si se proporcionó un country code por defecto y el número parece local, prepend
-        if (defaultCountry && !cleanPhone.startsWith(defaultCountry) && cleanPhone.length <= 10) {
-          cleanPhone = `${defaultCountry}${cleanPhone}`;
-        }
-
-        const formattedPhone = rawPhone.includes('@') ? rawPhone : `${cleanPhone}@s.whatsapp.net`;
-
-        const displayName = nombre || cleanPhone || id_modalservicio;
-        console.log(`\n📤 [${i + 1}/${recipients.length}] Enviando a ${displayName} (${cleanPhone})...`);
+        // Normalizar teléfono usando util centralizado
+        const formattedPhone = normalizePhone(telefono);
+        const displayName = nombre || telefono || id_modalservicio;
+        console.log(`\n📤 [${i + 1}/${recipients.length}] Enviando a ${displayName} (${formattedPhone})...`);
 
         // Interpolar nombre si existe {nombre} en el mensaje
         const textoInterpolado = interpolateMessage(message, nombre);
@@ -1861,20 +1812,7 @@ export default {
     // Normalizar y aceptar números locales (ej. 9 dígitos). Prepend DEFAULT_COUNTRY_CODE si falta.
     let rawPhone = phone;
     if (typeof rawPhone !== 'string') rawPhone = String(rawPhone || '');
-    let formattedPhone;
-    if (rawPhone.includes('@')) {
-      formattedPhone = rawPhone;
-    } else {
-      let cleanPhone = rawPhone.replace(/\D/g, '').replace(/^0+/, '');
-      const defaultCountry = (process.env.DEFAULT_COUNTRY_CODE || process.env.WHATSAPP_DEFAULT_COUNTRY || '').replace(/['"]/g, '');
-      if (defaultCountry && !cleanPhone.startsWith(defaultCountry) && cleanPhone.length <= 10) {
-        cleanPhone = `${defaultCountry}${cleanPhone}`;
-      }
-      if (cleanPhone.length < 9 || cleanPhone.length > 15) {
-        throw new Error('El número de teléfono debe tener entre 9 y 15 dígitos');
-      }
-      formattedPhone = `${cleanPhone}@s.whatsapp.net`;
-    }
+    const formattedPhone = normalizePhone(rawPhone);
 
     // [DEPRECATED] Importación de templates eliminada - ya no se usan plantillas
     // const { getAcceptanceTemplate, getRejectionTemplate } = await import('../templates.js');
