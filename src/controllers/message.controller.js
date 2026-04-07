@@ -1,4 +1,5 @@
-import whatsappService, { getImageBase64, notifyBackendStatus } from "../services/whatsapp.service.js";
+import whatsappService, { notifyBackendStatus } from "../services/whatsapp.service.js";
+import { downloadImageFromUrl } from "../utils/imageProcessor.js";
 import { normalizePhone } from "../utils/normalizePhone.js";
 import sessionManager from "../services/session.manager.js";
 import { fileURLToPath } from 'url';
@@ -100,7 +101,7 @@ export async function sendMessageWithImageDashboard(req, res) {
     if (image_url) {
       try {
         console.log(`📥 Descargando imagen desde: ${image_url}`);
-        imageBuffer = await getImageBase64(image_url);
+        imageBuffer = await downloadImageFromUrl(image_url, { validate: true, strict: false });
         if (imageBuffer) {
           console.log(`✅ Imagen descargada exitosamente. Tamaño: ${imageBuffer.length} bytes, Tipo: ${typeof imageBuffer}, IsBuffer: ${Buffer.isBuffer(imageBuffer)}`);
         } else {
@@ -108,7 +109,7 @@ export async function sendMessageWithImageDashboard(req, res) {
         }
       } catch (imgError) {
         console.warn("⚠️ Error descargando imagen:", imgError.message);
-        // Continuar sin imagen si falla la descarga
+        // Continuar sin imagen si falla la descarga (lenient mode para Modal WAT)
       }
     }
 
@@ -647,17 +648,17 @@ export function getReconnectionStatus(req, res) {
   }
 }
 
-// Funcion para enviar mensajes con imagenes
+// Funcion para enviar mensajes con imagenes desde URL
 export async function sendMessageWithImage(req, res) {
   try {
-    const { imageData, phone, caption } = req.body;
+    const { imageUrl, phone, caption } = req.body;
 
     // Validaciones adicionales
-    if (!phone || !imageData) {
+    if (!phone || !imageUrl) {
       return res.status(400).json({
         success: false,
         message: "Faltan campos requeridos",
-        required: ["imageData", "phone"],
+        required: ["imageUrl", "phone"],
       });
     }
 
@@ -672,7 +673,7 @@ export async function sendMessageWithImage(req, res) {
     }
 
     const result = await whatsappService.sendMessageWithImage({
-      imageData,
+      imageUrl,
       phone,
       caption: caption || 'Imagen enviada'
     });

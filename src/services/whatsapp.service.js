@@ -2,6 +2,8 @@ import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore } from
 import QRCode from 'qrcode';
 import { interpolateMessage } from '../utils/messageUtils.js';
 import { normalizePhone } from '../utils/normalizePhone.js';
+import { downloadImageFromUrl } from '../utils/imageProcessor.js';
+import { IMAGE_CONFIG } from '../config/constants.js';
 import whatsappSessionLogger from '../utils/whatsappSessionLogger.js';
 // Use console as fallback logger to avoid the custom logger dependency
 const logger = console;
@@ -779,12 +781,11 @@ async function generateOptimalQR(qrString, format = 'PNG') {
   }
 }
 
-/**
- * Descarga imagen desde URL o ruta local y retorna Buffer
- * Soporta: URLs externas (http/https), rutas locales relativas a src/public/, y URLs BASE_URL
- * @param {string} imgPath - Ruta o URL de imagen
- * @returns {Promise<Buffer|null>} - Buffer de imagen o null si falla
- */
+/*
+[DEPRECATED - USE imageProcessor.js INSTEAD]
+Descarga imagen desde URL o ruta local y retorna Buffer
+Reemplazada por downloadImageFromUrl() y readImageFromLocal() en src/utils/imageProcessor.js
+
 export async function getImageBase64(imgPath) {
   try {
     // Para cualquier URL (http/https), usar fetch con timeout
@@ -818,6 +819,7 @@ export async function getImageBase64(imgPath) {
     return null;
   }
 }
+*/
 
 // Re-export normalizePhone from utils
 export { normalizePhone } from '../utils/normalizePhone.js';
@@ -1142,22 +1144,28 @@ export default {
 ========================= */
   // Si image es un Buffer (ya descargado desde controller), usarlo directamente
   // Si es string (URL/ruta), descargarlo ahora
-  let imageBuffer;
-  if (Buffer.isBuffer(image)) {
-    imageBuffer = image;
-    logger.info("Detectado Buffer de imagen en service", { tamaño: imageBuffer.length });
-    console.log(`✅ Buffer de imagen recibido en service: ${imageBuffer.length} bytes`);
-  } else if (image) {
-    console.log(`📥 Descargando imagen desde string en service: ${image}`);
-    imageBuffer = await getImageBase64(image);
-    if (!imageBuffer) {
-      console.error("Ruta de imagen no encontrada:", image);
-      throw new Error("No se pudo cargar la imagen seleccionada. Verifique que el archivo exista en el servidor.");
+  let imageBuffer = null;
+  if (image) {
+    if (Buffer.isBuffer(image)) {
+      // Ya es Buffer (descargado en controller)
+      imageBuffer = image;
+      logger.info("Buffer de imagen recibido en service", { tamaño: imageBuffer.length });
+    } else {
+      // Es string (ruta/URL), descargar aquí
+      try {
+        console.log(`📥 Descargando imagen desde: ${image}`);
+        imageBuffer = await downloadImageFromUrl(image, { validate: true, strict: false });
+        if (!imageBuffer) {
+          console.warn("⚠️ No se pudo descargar imagen, continuando sin ella");
+        } else {
+          console.log(`✅ Imagen descargada: ${(imageBuffer.length / 1024).toFixed(2)} KB`);
+        }
+      } catch (error) {
+        // Modal WAT es lenient (continúa sin imagen)
+        console.warn(`⚠️ Error descargando imagen: ${error.message}`);
+        imageBuffer = null;
+      }
     }
-    console.log(`✅ Imagen descargada en service: ${imageBuffer.length} bytes`);
-  } else {
-    imageBuffer = null;
-    console.log("⏭️ Sin imagen para este envío");
   }
 
   /* =========================
@@ -1224,7 +1232,7 @@ export default {
   }
 }
 ,
-  async sendMessageWithImage({ imageData, phone, caption }) {
+  async sendMessageWithImage({ imageUrl, phone, caption }) {
     if (!connectionState.socket?.user) {
       throw new Error('No conectado a WhatsApp. Por favor, escanea el código QR primero.');
     }
@@ -1233,24 +1241,16 @@ export default {
     // Centralized normalizer
     const formattedPhone = normalizePhone(phone);
 
-    // Validar datos de imagen
-    if (!imageData) {
-      throw new Error('Los datos de la imagen son requeridos');
+    // Validar URL de imagen
+    if (!imageUrl) {
+      throw new Error('La URL de la imagen es requerida');
     }
 
     let imageBuffer;
     try {
-      // Remover prefijo data:image si existe
-      const base64Data = imageData.replace(/^data:image\/[a-z]+;base64,/, '');
-      imageBuffer = Buffer.from(base64Data, 'base64');
-
-      // Validar tamaño de imagen (máximo 16MB para WhatsApp)
-      const maxSize = 16 * 1024 * 1024; // 16MB
-      if (imageBuffer.length > maxSize) {
-        throw new Error('La imagen es demasiado grande. El tamaño máximo es 16MB');
-      }
+      imageBuffer = await downloadImageFromUrl(imageUrl, { validate: true, strict: true });
     } catch (error) {
-      throw new Error('Formato de imagen base64 inválido');
+      throw new Error(`No se pudo descargar la imagen: ${error.message}`);
     }
 
     try {
@@ -1543,67 +1543,10 @@ export default {
   // ===============================
   // CAMPAÑA BATCH - Envío masivo
   // ===============================
-
-  /**
-   * Valida si una imagen existe y es accesible
-   * @param {string} imagePath - Ruta de la imagen (URL o path local)
-   * @returns {Promise<{valid: boolean, buffer?: Buffer, error?: string}>}
-   */
-  async validateImage(imagePath) {
-    try {
-      if (!imagePath) {
-        return { valid: false, error: 'Ruta de imagen no proporcionada' };
-      }
-
-      const imageBuffer = await getImageBase64(imagePath);
-      
-      if (!imageBuffer) {
-        return { valid: false, error: 'No se pudo cargar la imagen' };
-      }
-
-      // Validar tamaño máximo (16MB para WhatsApp)
-      const maxSize = 16 * 1024 * 1024;
-      if (imageBuffer.length > maxSize) {
-        return { valid: false, error: 'La imagen excede el tamaño máximo de 16MB' };
-      }
-
-      // Validar que sea un buffer válido de imagen
-      const isValidImage = this.isValidImageBuffer(imageBuffer);
-      if (!isValidImage) {
-        return { valid: false, error: 'El archivo no es una imagen válida' };
-      }
-
-      return { valid: true, buffer: imageBuffer, size: imageBuffer.length };
-    } catch (error) {
-      logger.error('Error validando imagen', { imagePath, error: error.message });
-      return { valid: false, error: error.message };
-    }
-  },
-
-  /**
-   * Verifica si un buffer es una imagen válida basándose en magic bytes
-   */
-  isValidImageBuffer(buffer) {
-    if (!buffer || buffer.length < 4) return false;
-    
-    // JPEG: FF D8 FF
-    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return true;
-    
-    // PNG: 89 50 4E 47
-    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return true;
-    
-    // GIF: 47 49 46 38
-    if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) return true;
-    
-    // WebP: 52 49 46 46 ... 57 45 42 50
-    if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) {
-      if (buffer.length >= 12 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
-        return true;
-      }
-    }
-    
-    return false;
-  },
+  // [DEPRECATED] validateImage() y isValidImageBuffer() están comentados
+  // Usar imageValidator.js en su lugar: validateImageMagicBytes(), validateImageBuffer(), validateImagePath()
+  // async validateImage(imagePath) { ... }
+  // isValidImageBuffer(buffer) { ... }
 
   /**
    * Envía una campaña en batch con rate limiting
@@ -1646,22 +1589,16 @@ export default {
       throw error;
     }
 
-    // Obtener/leer imagen una sola vez reutilizando getImageBase64
+    // Obtener/leer imagen una sola vez (reutilizar para todos los recipients)
     let imageBuffer = null;
     if (image_url) {
       try {
         console.log(`📥 Obteniendo imagen desde: ${image_url}`);
-        const downloaded = await getImageBase64(image_url);
-
-        if (!downloaded) {
-          throw new Error('No se pudo obtener la imagen desde la ruta proporcionada');
-        }
-
-        // Asegurar que disponemos de un Buffer (copiar para seguridad)
-        imageBuffer = Buffer.from(downloaded);
+        imageBuffer = await downloadImageFromUrl(image_url, { validate: true, strict: true });
         console.log(`✅ Imagen obtenida: ${(imageBuffer.length / 1024).toFixed(2)} KB`);
       } catch (error) {
         console.error(`❌ Error obteniendo imagen:`, error.message);
+        // En batch, el error es CRÍTICO (strict: true arriba lo lanza)
         throw new Error(`No se pudo descargar la imagen de la campaña: ${error.message}`);
       }
     }
