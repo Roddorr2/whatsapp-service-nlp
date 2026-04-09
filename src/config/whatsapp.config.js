@@ -1,3 +1,5 @@
+import { TIMING_CONFIG } from './constants.js';
+
 export const whatsappConfig = {
   // Configuración de conexión optimizada para velocidad
   connection: {
@@ -71,12 +73,12 @@ export const whatsappConfig = {
     streamErrorRetryDelay: 2000, // 2 segundos
     
     // Timeouts más agresivos
-    connectionTimeout: 25000, // 25 segundos
-    qrTimeout: 15000, // 15 segundos
+    connectionTimeout: TIMING_CONFIG.CONNECTION_TIMEOUT_MS,
+    qrTimeout: TIMING_CONFIG.QR_TIMEOUT_MS,
     
     // Configuraciones de red
-    networkTimeout: 20000, // 20 segundos
-    pingInterval: 10000, // 10 segundos,
+    networkTimeout: TIMING_CONFIG.NETWORK_TIMEOUT_MS,
+    pingInterval: TIMING_CONFIG.PING_INTERVAL_MS,
     
     // Configuraciones específicas para error 515
     handleError515: true,

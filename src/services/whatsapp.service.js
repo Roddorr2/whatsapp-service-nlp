@@ -1,19 +1,27 @@
 import { makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
+import pino from 'pino';
+import path from 'path';
+import fs from 'fs';
 import { interpolateMessage } from '../utils/messageUtils.js';
 import { normalizePhone } from '../utils/normalizePhone.js';
 import { downloadImageFromUrl } from '../utils/imageProcessor.js';
-import { IMAGE_CONFIG } from '../config/constants.js';
+import { IMAGE_CONFIG, TIMING_CONFIG } from '../config/constants.js';
 import whatsappSessionLogger from '../utils/whatsappSessionLogger.js';
-// Use console as fallback logger to avoid the custom logger dependency
-const logger = console;
+import logger from '../utils/logger.js';
+// Local console shadow that routes module-level console.* calls to centralized logger
+const console = {
+  log: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  info: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  warn: (...args) => logger.warn(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  error: (...args) => logger.error(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  debug: (...args) => logger.debug(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {})
+};
 import { emitQrStatusUpdate } from '../app.js';
 import { getWhatsAppConfig } from '../config/whatsapp.config.js';
 //import { chatbotFlow } from '../chatbot/chatbotFlow.js';  # se ha deshabilitado el chatbot para este servicio
 import sessionManager from './session.manager.js';
 import { clearAuthContent } from '../triggers/clearAuthTrigger.js';
-import fs from 'fs';
-import path from 'path';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -160,12 +168,173 @@ function handleIncomingMessage(userId, message) {
 
 export async function startWhatsAppBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+  const config = getWhatsAppConfig();
 
   const sock = makeWASocket({
-    printQRInTerminal: true,
+    printQRInTerminal: config.security?.printQRInTerminal || false,
     auth: state,
-    mediaTimeoutMs: 60000,
-    connectTimeoutMs: 60000,
+    mediaTimeoutMs: TIMING_CONFIG.CONNECTION_TIMEOUT_MS,
+    connectTimeoutMs: TIMING_CONFIG.CONNECTION_TIMEOUT_MS,
+    // Create Pino logger instance that writes directly to logs/baileys.log
+    // All Baileys events (level 20-50) go to file; summaries emitted to main logger
+    logger: (() => {
+      const baileyLogFile = process.env.BAILEYS_LOG_FILE || path.join(process.cwd(), 'logs', 'baileys.log');
+      const demoteLevel = (process.env.BAILEYS_DEMOTE_LEVEL || 'warn');
+      const showGroups = process.env.LOG_GROUP_MESSAGES === 'true';
+      const logToFile = process.env.BAILEYS_LOG_TO_FILE !== 'false';
+
+      // Ensure log directory exists
+      try { fs.mkdirSync(path.dirname(baileyLogFile), { recursive: true }); } catch (e) { /* ignore */ }
+
+      // Create Pino instance that writes to baileys.log using native destination (with sync: true for reliability)
+      const pinoInstance = logToFile ? pino(
+        { level: 'debug' },
+        pino.destination({ dest: baileyLogFile, sync: true })
+      ) : pino({ level: 'debug' });
+      
+      // Write initialization marker to verify pino is working
+      if (logToFile) {
+        pinoInstance.info({ ts: new Date().toISOString() }, 'Baileys logger initialized');
+      }
+
+      function isGroupMeta(obj) {
+        try {
+          const jid = obj?.msgAttrs?.from || obj?.key?.remoteJid || obj?.meta?.key?.remoteJid || obj?.key?.participant;
+          return typeof jid === 'string' && jid.endsWith('@g.us');
+        } catch (_) { return false; }
+      }
+
+      // Aggregation state for log deduplication during time window
+      const aggregateWindow = process.env.BAILEYS_AGGREGATE_WINDOW_MS || 12000;
+      const aggregateActive = process.env.BAILEYS_AGGREGATE_ACTIVE === 'true';
+      const aggregation = {
+        errors: new Map(), // { errorName: count }
+        infos: new Map(),
+        warns: new Map(),
+        firstTimestamp: null,
+        timeoutId: null
+      };
+
+      function flushAggregation() {
+        if (aggregation.errors.size > 0 || aggregation.warns.size > 0) {
+          const entries = [];
+          for (const [name, count] of aggregation.errors) {
+            entries.push(`${name} (${count}x)`);
+          }
+          for (const [name, count] of aggregation.warns) {
+            entries.push(`${name} (${count}x)`);
+          }
+          const summary = entries.join(', ');
+          try { logger[demoteLevel](`[Baileys Aggregated] ${summary} - See baileys.log for details`, { source: 'baileys' }); } catch (e) {}
+        }
+        aggregation.errors.clear();
+        aggregation.warns.clear();
+        aggregation.infos.clear();
+        aggregation.firstTimestamp = null;
+      }
+
+      function scheduleFlush() {
+        if (aggregation.timeoutId) clearTimeout(aggregation.timeoutId);
+        aggregation.timeoutId = setTimeout(() => {
+          flushAggregation();
+        }, aggregateWindow);
+      }
+
+      function extractErrorName(msg, obj) {
+        // Check obj.err first (Baileys structure)
+        if (obj?.err?.name) {
+          const name = obj.err.name;
+          // Handle "Bad MAC" and similar cryptographic errors
+          if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+          return name;
+        }
+        if (obj?.error?.name) {
+          const name = obj.error.name;
+          if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+          return name;
+        }
+        
+        // Check msg parameter (sometimes error info comes here)
+        if (typeof msg === 'object') {
+          if (msg?.err?.name) {
+            const name = msg.err.name;
+            if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+            return name;
+          }
+          if (msg?.name) {
+            const name = msg.name;
+            if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+            return name;
+          }
+        }
+        
+        // Check string message
+        if (typeof msg === 'string') {
+          // Normalize "Bad MAC" errors
+          if (msg.includes('Bad MAC')) return 'BadMacError';
+          // Filter out random/junk messages (too short or random hex/noise)
+          if (msg.length > 200 || /^[0-9a-f]{32,}$/.test(msg)) return 'NoiseError';
+          // Keep readable short messages
+          if (msg.length < 100) return msg;
+        }
+        
+        return 'Unknown';
+      }
+
+      // Wrapper to emit summaries to main logger while Pino writes full details to file
+      const loggerWrapper = {
+        level: 'debug',
+        info: (msg, obj) => {
+          if (!isGroupMeta(obj) || showGroups) {
+            pinoInstance.info(obj || {}, msg);
+          }
+        },
+        warn: (msg, obj) => {
+          if (!isGroupMeta(obj) || showGroups) {
+            // If aggregation active, accumulate instead of emitting immediately
+            if (aggregateActive) {
+              const errName = extractErrorName(msg, obj);
+              aggregation.warns.set(errName, (aggregation.warns.get(errName) || 0) + 1);
+              if (!aggregation.firstTimestamp) aggregation.firstTimestamp = Date.now();
+              // Write to file always, but only suppress console output during window
+              pinoInstance.warn(obj || {}, msg);
+              scheduleFlush();
+            } else {
+              // No aggregation, emit directly
+              pinoInstance.warn(obj || {}, msg);
+            }
+          }
+        },
+        error: (msg, obj) => {
+          if (!isGroupMeta(obj) || showGroups) {
+            // If aggregation active, only accumulate - don't write immediately
+            if (aggregateActive) {
+              const errName = extractErrorName(msg, obj);
+              aggregation.errors.set(errName, (aggregation.errors.get(errName) || 0) + 1);
+              if (!aggregation.firstTimestamp) aggregation.firstTimestamp = Date.now();
+              // Only flush summary to console, details already in pinoInstance
+              scheduleFlush();
+            } else {
+              // No aggregation, emit directly to both file and console
+              pinoInstance.error(obj || {}, msg);
+            }
+          }
+        },
+        debug: (msg, obj) => {
+          if (!isGroupMeta(obj) || showGroups) {
+            pinoInstance.debug(obj || {}, msg);
+          }
+        },
+        trace: (msg, obj) => {
+          if (!isGroupMeta(obj) || showGroups) {
+            pinoInstance.trace(obj || {}, msg);
+          }
+        },
+        // Baileys uses child() to create child loggers; return self to maintain reference
+        child: () => loggerWrapper
+      };
+      return loggerWrapper;
+    })(),
     ws: {
       timeout: 60000,
       keepalive: true,
@@ -189,9 +358,19 @@ export async function startWhatsAppBot() {
   // 🔹 Ahora sí registramos los eventos
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
+    // Ignore messages without a conversation or messages sent by this bot
     if (!msg.message?.conversation || msg.key.fromMe) return;
 
-    const userId = msg.key.remoteJid;
+    const remote = String(msg.key.remoteJid || '');
+    // By default ignore group messages to reduce terminal noise. To enable
+    // group message processing set `LOG_GROUP_MESSAGES=true` in environment.
+    if (remote.endsWith('@g.us') && process.env.LOG_GROUP_MESSAGES !== 'true') {
+      // Optionally log a single-line debug when first ignoring groups (commented)
+      // logger.debug('Ignored group message', { from: remote, id: msg.key.id });
+      return;
+    }
+
+    const userId = remote;
     const text = msg.message.conversation;
 
     const response = handleIncomingMessage(userId, text);
@@ -219,7 +398,7 @@ async function cleanupConnection() {
       await connectionState.socket.end();
       console.debug('Socket closed successfully');
     } catch (error) {
-      console.debug('Socket already closed or error closing', { error: error.message });
+      console.debug('Socket already closed or error closing', { err: error });
     }
   }
 
@@ -271,7 +450,7 @@ async function generateQRFromUpdate(qrString) {
 
     connectionState.qrData = {
       image: qrResult.image,
-      expiresAt: Date.now() + 120000, // 2 minutos
+      expiresAt: Date.now() + TIMING_CONFIG.QR_EXPIRY_MS, // 4 minutos
       createdAt: new Date().toISOString(),
       qrString: qrString,
       format: qrResult.format,
@@ -284,7 +463,7 @@ async function generateQRFromUpdate(qrString) {
       try {
       emitQrStatusUpdate(getQRStatus());
     } catch (emitError) {
-      console.error('Error emitting QR status update', { error: emitError.message });
+      console.error('Error emitting QR status update', { err: emitError });
     }
 
     console.info('QR generated from connection update', {
@@ -294,7 +473,7 @@ async function generateQRFromUpdate(qrString) {
       fallback: qrResult.fallback || false
     });
   } catch (error) {
-    console.error('Error generating QR from update', { error: error.message, stack: error.stack });
+    console.error('Error generating QR from update', { err: error });
   }
 }
 
@@ -303,13 +482,13 @@ async function generateNewQR(session) {
   return new Promise((resolve, reject) => {
     try {
       const config = getWhatsAppConfig();
-      const qrTimeout = config.stability?.qrTimeout || 15000;
+      const qrTimeout = TIMING_CONFIG.QR_TIMEOUT_MS;
 
       const timeoutId = setTimeout(() => {
         try {
           session.ev.off('connection.update', qrHandler);
         } catch (error) {
-            console.error('Error removing QR handler', { error: error.message });
+          console.error('Error removing QR handler', { err: error });
         }
         reject(new Error('Timeout al generar QR'));
       }, qrTimeout);
@@ -326,7 +505,7 @@ async function generateNewQR(session) {
                 try {
                   connectionState.qrData = {
                     image: qrResult.image,
-                    expiresAt: Date.now() + 120000, // 2 minutos
+                    expiresAt: Date.now() + TIMING_CONFIG.QR_EXPIRY_MS, // 4 minutos
                     createdAt: new Date().toISOString(),
                     qrString: update.qr,
                     format: qrResult.format,
@@ -336,13 +515,13 @@ async function generateNewQR(session) {
                   };
                   resolve(qrResult.image);
                 } catch (error) {
-                  console.error('Error setting QR data', { error: error.message });
+                  console.error('Error setting QR data', { err: error });
                   reject(error);
                 }
               })
               .catch(reject);
           } catch (error) {
-            console.error('Error in QR handler', { error: error.message });
+            console.error('Error in QR handler', { err: error });
             reject(error);
           }
         }
@@ -350,7 +529,7 @@ async function generateNewQR(session) {
 
       session.ev.on('connection.update', qrHandler);
     } catch (error) {
-      console.error('Error setting up QR generation', { error: error.message });
+      console.error('Error setting up QR generation', { err: error });
       reject(error);
     }
   });
@@ -484,12 +663,12 @@ async function attemptReconnect() {
               // Notificar UI/admin que se requiere intervención manual
               try {
                 emitQrStatusUpdate({
-                  requiresManualIntervention: true,
-                  reason: 'corrupted_credentials_detected',
-                  message: 'Credenciales corruptas detectadas. Restaurar backup o usar endpoint admin para resetear auth_info.'
-                });
+                    requiresManualIntervention: true,
+                    reason: 'corrupted_credentials_detected',
+                    message: 'Credenciales corruptas detectadas. Restaurar backup o usar endpoint admin para resetear auth_info.'
+                  });
               } catch (emitError) {
-                console.error('Error emitting QR status update for corrupted credentials', { error: emitError.message });
+                  console.error('Error emitting QR status update for corrupted credentials', { err: emitError });
               }
 
               return;
@@ -582,7 +761,161 @@ async function createNewSession() {
     const sock = makeWASocket({
       auth: state,
       printQRInTerminal: config.security?.printQRInTerminal || false,
-      connectTimeoutMs: config.stability?.connectionTimeout || config.connection?.connectTimeoutMs || 30000,
+      // Create Pino logger instance that writes directly to logs/baileys.log
+      // All Baileys events (level 20-50) go to file; summaries emitted to main logger
+      logger: (() => {
+        const baileyLogFile = process.env.BAILEYS_LOG_FILE || path.join(process.cwd(), 'logs', 'baileys.log');
+        const demoteLevel = (process.env.BAILEYS_DEMOTE_LEVEL || 'warn');
+        const showGroups = process.env.LOG_GROUP_MESSAGES === 'true';
+        const logToFile = process.env.BAILEYS_LOG_TO_FILE !== 'false';
+
+        // Ensure log directory exists
+        try { fs.mkdirSync(path.dirname(baileyLogFile), { recursive: true }); } catch (e) { /* ignore */ }
+
+        // Create Pino instance that writes to baileys.log using native destination (with sync: true for reliability)
+        const pinoInstance = logToFile ? pino(
+          { level: 'debug' },
+          pino.destination({ dest: baileyLogFile, sync: true })
+        ) : pino({ level: 'debug' });
+        
+        // Write initialization marker to verify pino is working
+        if (logToFile) {
+          pinoInstance.info({ ts: new Date().toISOString() }, 'Baileys logger initialized');
+        }
+
+        function isGroupMeta(obj) {
+          try {
+            const jid = obj?.msgAttrs?.from || obj?.key?.remoteJid || obj?.meta?.key?.remoteJid || obj?.key?.participant;
+            return typeof jid === 'string' && jid.endsWith('@g.us');
+          } catch (_) { return false; }
+        }
+
+        // Aggregation state for log deduplication during time window
+        const aggregateWindow = process.env.BAILEYS_AGGREGATE_WINDOW_MS || 12000;
+        const aggregateActive = process.env.BAILEYS_AGGREGATE_ACTIVE === 'true';
+        const aggregation = {
+          errors: new Map(), // { errorName: count }
+          infos: new Map(),
+          warns: new Map(),
+          firstTimestamp: null,
+          timeoutId: null
+        };
+
+        function flushAggregation() {
+          if (aggregation.errors.size > 0 || aggregation.warns.size > 0) {
+            const entries = [];
+            for (const [name, count] of aggregation.errors) {
+              entries.push(`${name} (${count}x)`);
+            }
+            for (const [name, count] of aggregation.warns) {
+              entries.push(`${name} (${count}x)`);
+            }
+            const summary = entries.join(', ');
+            try { logger[demoteLevel](`[Baileys Aggregated] ${summary} - See baileys.log for details`, { source: 'baileys' }); } catch (e) {}
+          }
+          aggregation.errors.clear();
+          aggregation.warns.clear();
+          aggregation.infos.clear();
+          aggregation.firstTimestamp = null;
+        }
+
+        function scheduleFlush() {
+          if (aggregation.timeoutId) clearTimeout(aggregation.timeoutId);
+          aggregation.timeoutId = setTimeout(() => {
+            flushAggregation();
+          }, aggregateWindow);
+        }
+
+        function extractErrorName(msg, obj) {
+          // Check obj.err first (Baileys structure)
+          if (obj?.err?.name) {
+            const name = obj.err.name;
+            // Handle "Bad MAC" and similar cryptographic errors
+            if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+            return name;
+          }
+          if (obj?.error?.name) {
+            const name = obj.error.name;
+            if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+            return name;
+          }
+          
+          // Check msg parameter (sometimes error info comes here)
+          if (typeof msg === 'object') {
+            if (msg?.err?.name) {
+              const name = msg.err.name;
+              if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+              return name;
+            }
+            if (msg?.name) {
+              const name = msg.name;
+              if (name.includes('Bad MAC') || name.includes('BadMac')) return 'BadMacError';
+              return name;
+            }
+          }
+          
+          // Check string message
+          if (typeof msg === 'string') {
+            // Normalize "Bad MAC" errors
+            if (msg.includes('Bad MAC')) return 'BadMacError';
+            // Filter out random/junk messages (too short or random hex/noise)
+            if (msg.length > 200 || /^[0-9a-f]{32,}$/.test(msg)) return 'NoiseError';
+            // Keep readable short messages
+            if (msg.length < 100) return msg;
+          }
+          
+          return 'Unknown';
+        }
+
+        // Wrapper to emit summaries to main logger while Pino writes full details to file
+        const loggerWrapper = {
+          level: 'debug',
+          info: (msg, obj) => {
+            if (!isGroupMeta(obj) || showGroups) {
+              pinoInstance.info(obj || {}, msg);
+            }
+          },
+          warn: (msg, obj) => {
+            if (!isGroupMeta(obj) || showGroups) {
+              if (aggregateActive) {
+                const errName = extractErrorName(msg, obj);
+                aggregation.warns.set(errName, (aggregation.warns.get(errName) || 0) + 1);
+                if (!aggregation.firstTimestamp) aggregation.firstTimestamp = Date.now();
+                pinoInstance.warn(obj || {}, msg);
+                scheduleFlush();
+              } else {
+                pinoInstance.warn(obj || {}, msg);
+              }
+            }
+          },
+          error: (msg, obj) => {
+            if (!isGroupMeta(obj) || showGroups) {
+              if (aggregateActive) {
+                const errName = extractErrorName(msg, obj);
+                aggregation.errors.set(errName, (aggregation.errors.get(errName) || 0) + 1);
+                if (!aggregation.firstTimestamp) aggregation.firstTimestamp = Date.now();
+                scheduleFlush();
+              } else {
+                pinoInstance.error(obj || {}, msg);
+              }
+            }
+          },
+          debug: (msg, obj) => {
+            if (!isGroupMeta(obj) || showGroups) {
+              pinoInstance.debug(obj || {}, msg);
+            }
+          },
+          trace: (msg, obj) => {
+            if (!isGroupMeta(obj) || showGroups) {
+              pinoInstance.trace(obj || {}, msg);
+            }
+          },
+          // Baileys uses child() to create child loggers; return self to maintain reference
+          child: () => loggerWrapper
+        };
+        return loggerWrapper;
+      })(),
+      connectTimeoutMs: TIMING_CONFIG.CONNECTION_TIMEOUT_MS,
       browser: [config.browser?.name || 'Chrome', config.browser?.version || '120.0.0.0', config.browser?.os || 'Windows'],
       keepAliveIntervalMs: config.connection?.keepAliveIntervalMs || 60000,
       markOnlineOnConnect: config.security?.markOnlineOnConnect !== false,
@@ -597,14 +930,11 @@ async function createNewSession() {
         }
         return msg;
       },
-      ws: {
-        timeout: config.stability?.networkTimeout || config.websocket?.timeout || 30000,
-        keepalive: true,
-        keepaliveInterval: config.websocket?.keepaliveInterval || 15000,
-      }
+      // NOTE: previously there was an emitQrStatusUpdate try/catch here by
+      // mistake which resulted in a syntax error. That block has been removed
+      // (it was duplicated from the reconnection logic). Emission of QR
+      // updates should happen in the reconnection/backoff flow where needed.
     });
-
-    sock.ev.on('creds.update', saveCreds);
 
     // Configurar event handlers para mejor manejo de conexión
     sock.ev.on('connection.update', async (update) => {
@@ -616,7 +946,7 @@ async function createNewSession() {
         });
 
         // Delegate to session manager for debounce/verification and potential auth_info cleanup
-        try { sessionManager.handleConnectionUpdate(update); } catch (e) { logger.error('sessionManager.handleConnectionUpdate failed', { error: e?.message }); }
+        try { sessionManager.handleConnectionUpdate(update); } catch (e) { logger.error('sessionManager.handleConnectionUpdate failed', { err: e }); }
 
         // Manejar cambios de estado de conexión (vista local para UI/estado)
         if (update.connection === 'connecting') {
@@ -659,7 +989,7 @@ async function createNewSession() {
           try {
             emitQrStatusUpdate(getQRStatus());
           } catch (emitError) {
-            logger.error('Error emitting disconnection status', { error: emitError.message });
+              logger.error('Error emitting disconnection status', { err: emitError });
           }
         }
 
@@ -669,13 +999,16 @@ async function createNewSession() {
           generateQRFromUpdate(update.qr);
         }
       } catch (error) {
-        logger.error('Error handling connection update', { error: error.message, stack: error.stack });
+        logger.error('Error handling connection update', { err: error });
       }
     });
 
+    // Registrar escuchador para guardado de credenciales
+    sock.ev.on('creds.update', saveCreds);
+
     return sock;
   } catch (error) {
-    logger.error('Error creating new session', { error: error.message, stack: error.stack });
+    logger.error('Error creating new session', { err: error });
     throw error;
   }
 }
@@ -757,7 +1090,7 @@ async function generateOptimalQR(qrString, format = 'PNG') {
     };
 
   } catch (error) {
-    logger.error('Error generating optimal QR', { error: error.message, format });
+    logger.error('Error generating optimal QR', { err: error, format });
 
     // Fallback a PNG básico si falla el formato especificado
     try {
@@ -843,9 +1176,8 @@ export async function notifyBackendStatus(webhookPayload) {
       };
     }
 
-    console.log(`\n🔔 Enviando webhook a ${backendUrl}`);
-    console.log(`📋 Payload del webhook:`);
-    console.log(JSON.stringify(webhookPayload, null, 2));
+    const webhookLogger = logger.child('WEBHOOK');
+    webhookLogger.formatted(`Enviando webhook a ${backendUrl}`, '🔔', { payload: webhookPayload });
 
     const response = await fetch(backendUrl, {
       method: 'POST',
@@ -862,8 +1194,7 @@ export async function notifyBackendStatus(webhookPayload) {
     }
 
     const responseData = await response.json();
-    console.log(`✅ Webhook entregado exitosamente.`);
-    console.log(`📦 Response desde Laravel:`, JSON.stringify(responseData, null, 2));
+    webhookLogger.formatted('Webhook entregado exitosamente', '✅', { status: response.status, response: responseData });
 
     return {
       success: true,
@@ -871,11 +1202,11 @@ export async function notifyBackendStatus(webhookPayload) {
       response: responseData
     };
   } catch (error) {
-    console.error(`❌ Error enviando webhook al backend:`, {
+    const webhookLogger = logger.child('WEBHOOK');
+    webhookLogger.formatted('Error entregando webhook', '❌', {
       error: error.message,
       recipient: webhookPayload?.recipient?.nombre || webhookPayload?.id_modalservicio,
-      status: webhookPayload?.status,
-      timestamp: new Date().toISOString()
+      status: webhookPayload?.status
     });
 
     // Retornar error pero no lanzar excepción para no interrumpir el flujo
@@ -942,13 +1273,13 @@ export default {
       try {
         await cleanupConnection();
       } catch (cleanupError) {
-        logger.error('Error during cleanup', { error: cleanupError.message });
+        logger.error('Error during cleanup', { err: cleanupError });
       }
 
       try {
         connectionState.socket = await createNewSession();
       } catch (sessionError) {
-        logger.error('Error creating new session', { error: sessionError.message });
+        logger.error('Error creating new session', { err: sessionError });
         throw {
           code: 'SESSION_ERROR',
           message: 'Error al crear nueva sesión',
@@ -978,7 +1309,7 @@ export default {
           connectionState.connectionStatus = 'disconnected';
         }
       } catch (resetError) {
-        logger.error('Error resetting state', { error: resetError.message });
+        logger.error('Error resetting state', { err: resetError });
       }
 
       throw error;
@@ -1344,7 +1675,7 @@ export default {
       // Si no tienes sharp, puedes retornar null o el buffer original redimensionado
       return null;
     } catch (error) {
-      logger.warn('Error generando thumbnail', { error: error.message });
+      logger.warn('Error generando thumbnail', { err: error });
       return null;
     }
   },
@@ -1480,7 +1811,7 @@ export default {
       });
       return qrResult;
     } catch (error) {
-      logger.error('Error generating QR in specific format', { error: error.message, format });
+      logger.error('Error generating QR in specific format', { err: error, format });
       throw error;
     }
   },
@@ -1524,7 +1855,7 @@ export default {
       try {
         emitQrStatusUpdate(getQRStatus());
       } catch (emitError) {
-        logger.error('Error emitting QR format change', { error: emitError.message });
+        logger.error('Error emitting QR format change', { err: emitError });
       }
 
       logger.info('QR format changed successfully', {
@@ -1535,7 +1866,7 @@ export default {
 
       return qrResult;
     } catch (error) {
-      logger.error('Error changing QR format', { error: error.message, format });
+      logger.error('Error changing QR format', { err: error, format });
       throw error;
     }
   },
@@ -1654,10 +1985,10 @@ export default {
 
           // Fire-and-forget para no bloquear el loop de envíos
           notifyBackendStatus(recipientWebhook)
-            .then(() => console.log(`🔔 Webhook entregado para ${displayName} (${cleanPhone})`))
-            .catch((webhookErr) => console.error(`⚠️ Error entregando webhook para ${nombre}:`, webhookErr.message));
+            .then(() => logger.child('WEBHOOK').formatted(`Webhook entregado para ${displayName}`, '✅', { recipient: cleanPhone, campaign_id: resolvedCampaignId }))
+            .catch((webhookErr) => logger.child('WEBHOOK').formatted(`Error entregando webhook`, '❌', { recipient: nombre, error: webhookErr.message, campaign_id: resolvedCampaignId }));
         } catch (webhookErr) {
-          console.error(`⚠️ Error preparando webhook para ${nombre}:`, webhookErr.message);
+          logger.child('WEBHOOK').formatted(`Error preparando webhook`, '⚠️', { recipient: nombre, error: webhookErr.message });
         }
 
         // Rate limiting: usar delay fijo de 4 segundos entre envíos
@@ -1690,10 +2021,10 @@ export default {
           };
 
           notifyBackendStatus(failureWebhook)
-            .then(() => console.log(`🔔 Webhook de error entregado para ${nombre}`))
-            .catch((webhookErr) => console.error(`⚠️ Error entregando webhook de error:`, webhookErr.message));
+            .then(() => logger.child('WEBHOOK').formatted(`Webhook de error entregado`, '✅', { recipient: nombre, campaign_id: resolvedCampaignId }))
+            .catch((webhookErr) => logger.child('WEBHOOK').formatted(`Error entregando webhook de error`, '❌', { recipient: nombre, error: webhookErr.message }));
         } catch (webhookErr) {
-          console.error(`⚠️ Error preparando webhook de error:`, webhookErr.message);
+          logger.child('WEBHOOK').formatted(`Error preparando webhook de error`, '⚠️', { recipient: nombre, error: webhookErr.message });
         }
 
         // Si hay error de conexión, detener el batch
@@ -1911,7 +2242,7 @@ export default {
       try {
         await cleanupConnection();
       } catch (cleanupErr) {
-        console.warn('Advertencia al limpiar conexión previa antes de startConnection', { error: cleanupErr.message });
+        console.warn('Advertencia al limpiar conexión previa antes de startConnection', { err: cleanupErr });
       }
 
       // Intentar crear nueva sesión inmediatamente
@@ -1932,11 +2263,11 @@ export default {
       } catch (sessionErr) {
         connectionState.isConnecting = false;
         connectionState.connectionStatus = 'disconnected';
-        console.error('Error creando nueva sesión en startConnection', { error: sessionErr.message });
+        console.error('Error creando nueva sesión en startConnection', { err: sessionErr });
         return { success: false, message: 'Error al crear nueva sesión', error: sessionErr.message };
       }
     } catch (err) {
-      console.error('Error en startConnection:', { error: err.message });
+      console.error('Error en startConnection:', { err: err });
       return { success: false, message: 'Error interno', error: err.message };
     }
   },

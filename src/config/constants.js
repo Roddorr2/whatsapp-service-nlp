@@ -64,9 +64,14 @@ export const TIMING_CONFIG = {
   // Health check
   HEALTH_CHECK_CACHE_DURATION_MS: 45000,
 
-  // QR
-  QR_TIMEOUT_MS: 15000,
-  QR_EXPIRY_MS: 120000, // 2 minutos
+  // QR (escaneo y expiración)
+  QR_TIMEOUT_MS: 30000,     // 30 segundos para que Baileys genere el QR
+  QR_EXPIRY_MS: 240000,     // 4 minutos para escanear y conectarse (después de mostrar el QR)
+
+  // Conexión (después de emparejamiento)
+  CONNECTION_TIMEOUT_MS: 60000,   // 60 segundos (aumentado de 25s para permitir emparejamiento)
+  NETWORK_TIMEOUT_MS: 30000,      // 30 segundos
+  PING_INTERVAL_MS: 10000,        // 10 segundos
 
   // Reconexión (backoff exponencial)
   RECONNECT_DELAYS_MS: [3000, 10000, 30000, 60000, 120000],
@@ -82,4 +87,17 @@ export const SECURITY_CONFIG = {
 
   // Ventana de tiempo para rate limiting (ms)
   RATE_LIMIT_WINDOW_MS: 3600000 // 1 hora
+};
+
+// ============================================
+// 🧾 BAILEYS / LOGGING
+// Centraliza los valores por defecto para el shim de Baileys.
+// Estos valores pueden ser sobreescritos mediante variables de entorno
+// antes de arrancar la aplicación si se desea comportamiento distinto.
+// ============================================
+export const BAILEYS_LOG_CONFIG = {
+  AGGREGATE_ACTIVE: true,
+  AGGREGATE_WINDOW_MS: 12000,
+  LOG_TO_FILE: true,
+  LOG_FILE: 'logs/baileys.log'
 };

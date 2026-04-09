@@ -7,6 +7,15 @@ import fs from 'fs';
 import path from 'path';
 import { BASE_URL } from "../config/index.js";
 import { interpolateMessage } from "../utils/messageUtils.js";
+import logger from "../utils/logger.js";
+// Local console shadow that routes module-level console.* calls to centralized logger
+const console = {
+  log: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  info: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  warn: (...args) => logger.warn(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  error: (...args) => logger.error(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  debug: (...args) => logger.debug(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {})
+};
 
 
 
@@ -144,10 +153,10 @@ export async function sendMessageWithImageDashboard(req, res) {
 
         // Fire-and-forget para no bloquear la respuesta al cliente
         notifyBackendStatus(webhookPayload)
-          .then(() => console.log(`🔔 Webhook Modal WAT entregado para ${nombre}`))
-          .catch((webhookErr) => console.error(`⚠️ Error entregando webhook Modal WAT para ${nombre}:`, webhookErr.message));
+          .then(() => logger.child('WEBHOOK').formatted(`Webhook Modal WAT entregado`, '✅', { recipient: nombre, id_modal_wat, status: 'sent' }))
+          .catch((webhookErr) => logger.child('WEBHOOK').formatted(`Error entregando webhook Modal WAT`, '❌', { recipient: nombre, id_modal_wat, error: webhookErr.message }));
       } catch (webhookErr) {
-        console.error("⚠️ Error preparando webhook Modal WAT:", webhookErr.message);
+        logger.child('WEBHOOK').formatted(`Error preparando webhook Modal WAT`, '⚠️', { error: webhookErr.message });
       }
     }
 
@@ -637,7 +646,7 @@ export function getReconnectionStatus(req, res) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error obteniendo estado de reconexión', { error: error.message });
+    console.error('Error obteniendo estado de reconexión', { err: error });
 
     res.status(500).json({
       success: false,

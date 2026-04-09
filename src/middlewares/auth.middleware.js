@@ -1,4 +1,6 @@
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
+import logger, { logAuthFailure } from '../utils/logger.js';
 
 // Middleware para verificar API Key (para servicios)
 export function apiKeyAuth(req, res, next) {
@@ -50,7 +52,7 @@ export async function authenticateJWT(req, res, next) {
     }
   }
   if (!userData) {
-    return res.status(401).json({ success: false, message: 'Token inválido o expirado' });
+    return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
   }
   req.user = userData;
   next();
@@ -72,8 +74,9 @@ export async function authenticateJWTorAPIKey(req, res, next) {
   if (apiKey) {
     // Validar que la API Key coincida con la variable de entorno
     if (!process.env.API_KEY || apiKey !== process.env.API_KEY) {
-      console.warn(`[AUTH] API Key validation failed. Expected: ${process.env.API_KEY}, Got: ${apiKey}`);
-      return res.status(401).json({ success: false, message: 'API Key inválida' });
+      // Do not log secrets or expected values. Delegate to security logger.
+      logAuthFailure(req, 'invalid_api_key');
+      return res.status(401).json({ success: false, message: 'No autorizado' });
     }
     req.user = {
       userId: 'apiKeyUser',
@@ -101,7 +104,7 @@ export function authorizeRoles(allowedRoles = []) {
       return next();
     }
 
-    return res.status(403).json({ success: false, message: `Acceso prohibido. Se requiere uno de estos roles: ${allowedRoles.join(', ')}` });
+    return res.status(403).json({ success: false, message: 'Permisos insuficientes' });
   };
 }
 
@@ -109,3 +112,18 @@ export function authorizeRoles(allowedRoles = []) {
 export function authorizeRole(requiredRole) {
   return authorizeRoles([requiredRole]);
 }
+
+// Rate Limiter específico para /login - previene brute-force attacks
+export const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 5, // máximo 5 intentos por IP
+  standardHeaders: true, // retorna información de rate limit en headers `RateLimit-*`
+  legacyHeaders: false, // desactiva headers `X-RateLimit-*`
+  skip: (req) => req.user?.isSystemJob, // omitir rate limiting para jobs del sistema
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      message: 'Demasiados intentos de login. Intenta de nuevo en 15 minutos.'
+    });
+  }
+});

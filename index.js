@@ -2,9 +2,34 @@ import 'dotenv/config';
 import { server } from './src/app.js';
 import { AUTH_CONFIG } from './src/config/auth.config.js';
 import sessionManager from './src/services/session.manager.js';
-const logger = console;
+import { BAILEYS_LOG_CONFIG } from './src/config/constants.js';
+import logger from './src/utils/logger.js';
+
+// Replace global console with a shim that routes to centralized logger
+const consoleShim = {
+  log: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  info: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  warn: (...args) => logger.warn(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  error: (...args) => logger.error(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  debug: (...args) => logger.debug(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {})
+};
+global.console = consoleShim;
 
 const PORT = process.env.PORT;
+
+// Apply BAILEYS log defaults from central constants if not already set
+if (typeof process.env.BAILEYS_AGGREGATE_ACTIVE === 'undefined') {
+  process.env.BAILEYS_AGGREGATE_ACTIVE = BAILEYS_LOG_CONFIG.AGGREGATE_ACTIVE ? 'true' : 'false';
+}
+if (typeof process.env.BAILEYS_AGGREGATE_WINDOW_MS === 'undefined') {
+  process.env.BAILEYS_AGGREGATE_WINDOW_MS = String(BAILEYS_LOG_CONFIG.AGGREGATE_WINDOW_MS);
+}
+if (typeof process.env.BAILEYS_LOG_TO_FILE === 'undefined') {
+  process.env.BAILEYS_LOG_TO_FILE = BAILEYS_LOG_CONFIG.LOG_TO_FILE ? 'true' : 'false';
+}
+if (typeof process.env.BAILEYS_LOG_FILE === 'undefined') {
+  process.env.BAILEYS_LOG_FILE = BAILEYS_LOG_CONFIG.LOG_FILE || 'logs/baileys.log';
+}
 
 // Validar configuración de autenticación
 AUTH_CONFIG.validateConfig();
