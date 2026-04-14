@@ -7,6 +7,8 @@ auth_info/
 # Variables de entorno
 .env
 
+test/
+
 # Logs
 logs/
 *.log

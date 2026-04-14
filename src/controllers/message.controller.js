@@ -1,10 +1,21 @@
-import whatsappService, { getImageBase64, notifyBackendStatus } from "../services/whatsapp.service.js";
+import whatsappService, { notifyBackendStatus } from "../services/whatsapp.service.js";
+import { downloadImageFromUrl } from "../utils/imageProcessor.js";
+import { normalizePhone } from "../utils/normalizePhone.js";
 import sessionManager from "../services/session.manager.js";
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import path from 'path';
 import { BASE_URL } from "../config/index.js";
 import { interpolateMessage } from "../utils/messageUtils.js";
+import logger from "../utils/logger.js";
+// Local console shadow that routes module-level console.* calls to centralized logger
+const console = {
+  log: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  info: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  warn: (...args) => logger.warn(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  error: (...args) => logger.error(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  debug: (...args) => logger.debug(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {})
+};
 
 
 
@@ -99,7 +110,7 @@ export async function sendMessageWithImageDashboard(req, res) {
     if (image_url) {
       try {
         console.log(`📥 Descargando imagen desde: ${image_url}`);
-        imageBuffer = await getImageBase64(image_url);
+        imageBuffer = await downloadImageFromUrl(image_url, { validate: true, strict: false });
         if (imageBuffer) {
           console.log(`✅ Imagen descargada exitosamente. Tamaño: ${imageBuffer.length} bytes, Tipo: ${typeof imageBuffer}, IsBuffer: ${Buffer.isBuffer(imageBuffer)}`);
         } else {
@@ -107,7 +118,7 @@ export async function sendMessageWithImageDashboard(req, res) {
         }
       } catch (imgError) {
         console.warn("⚠️ Error descargando imagen:", imgError.message);
-        // Continuar sin imagen si falla la descarga
+        // Continuar sin imagen si falla la descarga (lenient mode para Modal WAT)
       }
     }
 
@@ -142,10 +153,10 @@ export async function sendMessageWithImageDashboard(req, res) {
 
         // Fire-and-forget para no bloquear la respuesta al cliente
         notifyBackendStatus(webhookPayload)
-          .then(() => console.log(`🔔 Webhook Modal WAT entregado para ${nombre}`))
-          .catch((webhookErr) => console.error(`⚠️ Error entregando webhook Modal WAT para ${nombre}:`, webhookErr.message));
+          .then(() => logger.child('WEBHOOK').formatted(`Webhook Modal WAT entregado`, '✅', { recipient: nombre, id_modal_wat, status: 'sent' }))
+          .catch((webhookErr) => logger.child('WEBHOOK').formatted(`Error entregando webhook Modal WAT`, '❌', { recipient: nombre, id_modal_wat, error: webhookErr.message }));
       } catch (webhookErr) {
-        console.error("⚠️ Error preparando webhook Modal WAT:", webhookErr.message);
+        logger.child('WEBHOOK').formatted(`Error preparando webhook Modal WAT`, '⚠️', { error: webhookErr.message });
       }
     }
 
@@ -635,7 +646,7 @@ export function getReconnectionStatus(req, res) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error obteniendo estado de reconexión', { error: error.message });
+    console.error('Error obteniendo estado de reconexión', { err: error });
 
     res.status(500).json({
       success: false,
@@ -646,31 +657,32 @@ export function getReconnectionStatus(req, res) {
   }
 }
 
-// Funcion para enviar mensajes con imagenes
+// Funcion para enviar mensajes con imagenes desde URL
 export async function sendMessageWithImage(req, res) {
   try {
-    const { imageData, phone, caption } = req.body;
+    const { imageUrl, phone, caption } = req.body;
 
     // Validaciones adicionales
-    if (!phone || !imageData) {
+    if (!phone || !imageUrl) {
       return res.status(400).json({
         success: false,
         message: "Faltan campos requeridos",
-        required: ["imageData", "phone"],
+        required: ["imageUrl", "phone"],
       });
     }
 
-    // Validar formato del teléfono (aceptar 9-15 dígitos; el service completará el prefijo si hace falta)
-    const cleanPhone = phone ? String(phone).replace(/\D/g, '').replace(/^0+/, '') : '';
-    if (cleanPhone.length < 9 || cleanPhone.length > 15) {
+    // Validar formato del teléfono usando normalizador central
+    try {
+      normalizePhone(phone);
+    } catch (err) {
       return res.status(400).json({
         success: false,
-        message: "El número de teléfono debe tener entre 9 y 15 dígitos",
+        message: err.message || "El número de teléfono no es válido",
       });
     }
 
     const result = await whatsappService.sendMessageWithImage({
-      imageData,
+      imageUrl,
       phone,
       caption: caption || 'Imagen enviada'
     });

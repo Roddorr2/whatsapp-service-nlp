@@ -162,10 +162,48 @@ export function emitQrStatusToUser(userId, status) {
   io.to(`user-${userId}`).emit('qr-status-update', status);
 }
 
-// Manejo de errores global
+// Manejo de errores global con discriminación de tipos
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ success: false, message: 'Error interno del servidor' });
+  const statusCode = err.statusCode || err.status || 500;
+  const level = statusCode >= 500 ? 'ERROR' : 'WARN';
+  
+  // Log del error (sin exponer detalles internos)
+  if (level === 'ERROR') {
+    logger.log({
+      timestamp: new Date().toISOString(),
+      level,
+      message: `Error de servidor: ${err.message}`,
+      path: req.path,
+      method: req.method
+    });
+  }
+  
+  // Respuesta según tipo de error
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: 'Validación fallida',
+      errors: err.errors?.map(e => ({ field: e.path, message: e.msg })) || []
+    });
+  }
+  
+  if (err.name === 'UnauthorizedError' || statusCode === 401) {
+    return res.status(401).json({ success: false, message: 'Credenciales inválidas' });
+  }
+  
+  if (statusCode === 403) {
+    return res.status(403).json({ success: false, message: 'Permisos insuficientes' });
+  }
+  
+  if (statusCode === 400) {
+    return res.status(400).json({ success: false, message: err.message || 'Solicitud inválida' });
+  }
+  
+  // Para cualquier otro error, respuesta genérica (no expone internals)
+  res.status(statusCode).json({
+    success: false,
+    message: statusCode >= 500 ? 'Error interno del servidor' : err.message || 'Error en la solicitud'
+  });
 });
 
 export { server, io };

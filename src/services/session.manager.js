@@ -18,7 +18,15 @@
 import fs from 'fs';
 import path from 'path';
 import { clearAuthContent } from '../triggers/clearAuthTrigger.js';
-// logger removed: using console for logging to keep dependency minimal
+import logger from '../utils/logger.js';
+// Local console shadow that routes module-level console.* calls to centralized logger
+const console = {
+  log: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  info: (...args) => logger.info(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  warn: (...args) => logger.warn(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  error: (...args) => logger.error(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {}),
+  debug: (...args) => logger.debug(typeof args[0] === 'string' ? args[0] : JSON.stringify(args[0]), args[1] || {})
+};
 import dotenv from 'dotenv';
 import https from 'https';
 
@@ -127,8 +135,8 @@ class SessionManager {
           } else {
             console.info('SessionManager: cleanAuthIfCorrupted decided not to clean', { result: res });
           }
-        } catch (error) {
-          console.error('SessionManager: error in scheduled verify', { error: error.message });
+          } catch (error) {
+          console.error('SessionManager: error in scheduled verify', { err: error });
         }
       }, waitMs);
     }
@@ -178,7 +186,7 @@ class SessionManager {
       }
     } catch (error) {
       sessionState.whatsappServiceStatus = 'unknown';
-      console.error('❌ Error verificando salud de WhatsApp', { error: error.message });
+      console.error('❌ Error verificando salud de WhatsApp', { err: error });
       
       return {
         available: false,
@@ -223,7 +231,7 @@ class SessionManager {
 
       req.on('error', (error) => {
         clearTimeout(timeout);
-        console.debug('🔌 WhatsApp no alcanzable', { error: error.code });
+        console.debug('🔌 WhatsApp no alcanzable', { err: error });
         resolve(false);
       });
 
@@ -291,7 +299,7 @@ class SessionManager {
         credsContent = fs.readFileSync(credsPath, 'utf-8');
         credsParsed = JSON.parse(credsContent);
       } catch (parseError) {
-        console.error('❌ Error parseando creds.json', { error: parseError.message });
+        console.error('❌ Error parseando creds.json', { err: parseError });
         sessionState.credentialsStatus = 'corrupted';
         return {
           valid: false,
@@ -698,11 +706,11 @@ class SessionManager {
         console.info('✅ auth_info limpiado correctamente vía clearAuthContent()');
         return { cleaned: true, reason: 'cleaned_by_auto' };
       } catch (rmErr) {
-        console.error('❌ Error limpiando auth_info en auto-clean', { error: rmErr.message });
+        console.error('❌ Error limpiando auth_info en auto-clean', { err: rmErr });
         return { cleaned: false, reason: 'rm_error', error: rmErr.message };
       }
     } catch (error) {
-      console.error('❌ Error en cleanAuthIfCorrupted', { error: error.message });
+      console.error('❌ Error en cleanAuthIfCorrupted', { err: error });
       return { cleaned: false, reason: 'exception', error: error.message };
     }
   }
